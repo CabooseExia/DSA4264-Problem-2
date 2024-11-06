@@ -10,7 +10,7 @@
 
 <!-- i'm scared this counts as sensetive data. we need to edit this b4 submitting -->
 
-Last updated on 05/11/2024
+Last updated on 06/11/2024
 
 ## Section 1: Context
 There is a growing concern of toxic and hateful content on social media platforms, particularly within Singapore-related subreddits on Reddit. We are to report our findings to stakeholders, especially within the Ministry of Digital Development and Innovation (MDDI), which oversees online trust and safety. A significant portion of this concern is aimed at protecting vulnerable groups, such as children, who might be exposed to such content.
@@ -50,6 +50,13 @@ For this data science project to be successful, it will need to meet key busines
 ### 2.3 Assumptions
 Our team assumed that we are experts at recognising hate and toxic comments. (help)
 
+Temporal Stability of Toxicity Trends: It is assumed that trends in toxicity are relatively stable and can be analyzed over the selected time period without significant external disruptions (such as policy changes on Reddit or societal shifts) that might introduce bias.
+
+Adequate Model Generalization: The model selected (sileod/deberta-v3-base-tasksource-toxicity) is assumed to generalize well on the labeled data, despite its slightly lower F1-score compared to gpt-4o-mini. This assumes that the difference in performance will not significantly impact the overall accuracy of toxicity and hatefulness labeling.
+
+Given that the moderation feature is limited, we also assume that comments marked as `[deleted]` or `[removed]` are not inherently toxic or hateful. This assumption is based on the understanding that such comments may have been removed for reasons unrelated to toxicity, such as user discretion or unrelated policy violations, rather than due to harmful content.
+
+
 <!-- *In this subsection, you should set out the key assumptions for this data science project that, if changed, will affect the problem statement, success criteria, or feasibility. You do not need to detail out every single assumption if the expected impact is not significant.*
 
 *For example, if we are building an automated fraud detection model, one important assumption may be whether there is enough manpower to review each individual decision before proceeding with it.* -->
@@ -57,7 +64,7 @@ Our team assumed that we are experts at recognising hate and toxic comments. (he
 ## Section 3: Methodology
 
 ### 3.1 Technical Assumptions
-Defining Hate and Toxicity: For this project, we define hate as language or content that intentionally demeans or discriminates against an individual or group based on characteristics such as race, religion, gender, or other protected attributes. Toxicity refers to hostile, inflammatory, or harmful language that may provoke or offend, even if it does not directly target a specific group.These definitions are essential to distinguish between general negative sentiment and content that is considered harmful by moderation standards. Furthermore, as the reccomendations at the end would apply to deal with both toxic and hateful comments in general, we opted to merge the 2 into one feature. 
+For this project, we define hate as language or content that intentionally demeans or discriminates against an individual or group based on characteristics such as race, religion, gender, or other protected attributes. Toxicity refers to hostile, inflammatory, or harmful language that may provoke or offend, even if it does not directly target a specific group.These definitions are essential to distinguish between general negative sentiment and content that is considered harmful by moderation standards. Furthermore, as the reccomendations at the end would apply to deal with both toxic and hateful comments in general, we opted to merge the 2 into one feature. 
 
 
 #### Data Features
@@ -129,6 +136,38 @@ We did not train any models, so there was no train-test split applied to the dat
 
 ### 3.3 Experimental Design
 For labeling the data, we tested various models and used the F1-score as the primary metric to determine the best model for the task. To validate the models, the team labeled 300 challenging texts—entries we anticipated might be harder for the models to classify accurately. The highest-performing model was OpenAI's **gpt-4o-mini**, achieving an F1-score of 0.77. However, due to limited funds and time constraints, we opted to use **sileod/deberta-v3-base-tasksource-toxicity** for labeling the entire dataset. This model provided a relatively quick labeling process with a reasonable F1-score of 0.68.
+
+Here is a list of models tested for labeling toxic and hateful content:
+- **sileod/deberta-v3-base-tasksource-toxicity**
+- **unitary/toxic-bert**
+- **GroNLP/hateBERT**
+- **textdetox/xlmr-large-toxicity-classifier**
+- **facebook/roberta-hate-speech-dynabench-r4-target**
+- **cointegrated/rubert-tiny-toxicity**
+- **badmatr11x/distilroberta-base-offensive-hateful-speech-text-multiclassification**
+- **citizenlab/distilbert-base-multilingual-cased-toxicity**
+- **GANgstersDev/singlish-hate-offensive-finetuned-model-v2.0.1**
+- **Hate-speech-CNERG/dehatebert-mono-english**
+- **cardiffnlp/twitter-roberta-base-hate**
+- **Hate-speech-CNERG/bert-base-uncased-hatexplain**
+- **mrm8488/distilroberta-finetuned-tweets-hate-speech**
+- **meta-llama/Llama-3.2-1B-Instruct**
+- **meta-llama/Llama-3.2-3B-Instruct**
+- **aisingapore/llama3-8b-cpt-sea-lionv2.1-instruct**
+- **gpt-4o-mini**
+- **claude-3-haiku-20240307** 
+- **Perspective-API** trained on jigsaw able to multiclass
+
+The BERT-based models were selected for their popularity and established performance in text classification tasks, particularly for hate speech and toxicity detection. As the output for these models was a score between 0 and 1, we did hyperparameter tuning to find the threshold for each model that would maximize the f1-score. 
+
+The LLaMA models were chosen as alternatives to larger models, which our available computational resources could not handle.
+
+For models requiring API calls, we chose **gpt-4o-mini** and **Claude 3 Haiku** due to their lower costs, making them feasible options for us as budget-conscious university students. Additionally, we included **Perspective API** in our selection because it was trained on the Jigsaw toxicity dataset, which is well-regarded for detecting toxicity in text and aligns with our project goals.
+
+
+Additionally, multilingual models like **GANgstersDev/singlish-hate-offensive-finetuned-model-v2.0.1**, **citizenlab/distilbert-base-multilingual-cased-toxicity**, and **aisingapore/llama3-8b-cpt-sea-lionv2.1-instruct** were included in the testing, as they are trained on multilingual datasets, making them potentially more effective for handling language variations in our dataset. 
+
+
 
 
 
