@@ -107,7 +107,7 @@ with ui.nav_panel('Time series analysis'):
                     data = filtered_by_topic_data()
 
                     # Group data by week and by topic number, counting occurrences for each
-                    topic_data = data.groupby([pd.Grouper(key='timestamp', freq='W'), 'topic_number']).size().reset_index(name='Count')
+                    topic_data = data.groupby([pd.Grouper(key='timestamp', freq='W'), 'topic_number', 'topic_words']).size().reset_index(name='Count')
 
                     # Check if the data is empty
                     if topic_data.empty:
@@ -116,25 +116,34 @@ with ui.nav_panel('Time series analysis'):
                         fig.update_layout(height=400)
                         return fig
 
-                    # Create the Plotly figure
-                    fig = px.line(topic_data, x='timestamp', y='Count', color='topic_number', title="Weekly Count with Linear Trend Line by Topic")
+                    # Aggregate data across all topics by week
+                    overall_weekly_counts = topic_data.groupby('timestamp')['Count'].sum().reset_index()
 
-                    # Add a linear regression trend line for each topic
-                    for topic in topic_data['topic_number'].unique():
-                        topic_subset = topic_data[topic_data['topic_number'] == topic]
-                        
-                        # Perform linear regression to calculate the trend line for this topic
-                        x_values = np.arange(len(topic_subset))  # X-axis as indices for linear regression
-                        y_values = topic_subset['Count']
-                        slope, intercept = np.polyfit(x_values, y_values, 1)
-                        trend_line = slope * x_values + intercept
+                    # Create the Plotly figure for individual topic counts, including topic names in the legend
+                    fig = px.line(topic_data, x='timestamp', y='Count', color='topic_number', title="Weekly Count with Combined Linear Trend Line",
+                                labels={'color': 'Topic'})  # Customize legend label to show as 'Topic'
 
-                        # Add the trend line to the plot for the current topic
-                        fig.add_scatter(x=topic_subset['timestamp'], y=trend_line, mode='lines', name=f"Trend Line (Topic {topic})")
+                    # Update trace names to include topic names in the legend
+                    for trace in fig.data:
+                        topic_number = trace.name  # This is the topic_number used in the color legend
+                        topic_name = topic_data[topic_data['topic_number'] == int(topic_number)]['topic_words'].iloc[0]
+                        trace.name = f"Topic {topic_number} - {topic_name}"
+
+                    # Calculate the combined trend line based on overall weekly counts
+                    x_values = np.arange(len(overall_weekly_counts))  # X-axis as indices for linear regression
+                    y_values = overall_weekly_counts['Count']
+                    slope, intercept = np.polyfit(x_values, y_values, 1)
+                    combined_trend_line = slope * x_values + intercept
+
+                    # Add the combined trend line to the plot
+                    fig.add_scatter(x=overall_weekly_counts['timestamp'], y=combined_trend_line, mode='lines', name="Combined Trend Line")
 
                     # Customize layout
                     fig.update_layout(height=400)
                     return fig
+                
+
+                
                 # @render_plotly
                 # def topic_plot():
                 #     # Group data by week and count occurrences
@@ -265,17 +274,41 @@ with ui.nav_panel("Post title analysis"):
                     # Get the subreddit data from the filtered dataset
                     subreddits = filtered_by_post_data()['username']
                     
-                    # Exclude entries with "[deleted]"
-                    subreddits = subreddits[subreddits != "[deleted]"]
+                    # Exclude entries with "[deleted]", "sneakpeek_bot", and "AutoModerator"
+                    subreddits = subreddits[~subreddits.isin(["[deleted]", "sneakpeek_bot", "AutoModerator"])]
                     
                     # Calculate the most frequent subreddits
                     subreddit_freq = subreddits.value_counts().nlargest(20)
                     
-                    # Convert to a list of strings in the format "Subreddit: Frequency"
-                    top_subreddits_list = [f"{subreddit}: {count}" for subreddit, count in subreddit_freq.items()]
+                    # Convert to a list of strings in the format "Rank. Username: Frequency"
+                    top_subreddits_list = [f"{rank}. {subreddit}: {count}" 
+                                        for rank, (subreddit, count) in enumerate(subreddit_freq.items(), start=1)]
                     
                     # Render as a UI component, separated by line breaks
                     return ui.HTML("<br>".join(top_subreddits_list))
+        
+        with ui.layout_column_wrap():
+            with ui.card():
+                ui.card_header("Post Title hate analysis")
+
+                @render.ui
+                def general_proportion_of_hate_comments_img():
+                    filepath = f'{app_dir}\\wordclouds\\general_proportion_of_hate_comments.png'
+
+                # Check if the file exists
+                    if os.path.exists(filepath):
+                        # Load the image file and convert to base64
+                        with open(filepath, "rb") as img_file:
+                            base64_img = base64.b64encode(img_file.read()).decode("utf-8")
+                        img_src = f"data:image/png;base64,{base64_img}"
+                        
+                        # Display the image
+                        return ui.HTML(f'<img src="{img_src}" alt="Word Cloud" style="width: 100%;">')
+                    else:
+                        # Display a placeholder message if the file is not found
+                        return ui.HTML("<p>No word cloud available for the selected subreddit.</p>")
+                    
+                    
 
 with ui.nav_panel("XAI analysis"):
     "PENELOPE'S WAITING FOR ME, so full speed ahead'."
