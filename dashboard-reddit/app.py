@@ -2,7 +2,7 @@ import faicons as fa
 import plotly.express as px
 
 # Load data and compute static values
-from shared import app_dir, df
+from shared import app_dir, df, free_churro
 from shinywidgets import render_plotly
 
 from shiny import reactive, render
@@ -220,7 +220,7 @@ with ui.nav_panel('Topic analysis'):
 
                 @render.text
                 def keyword_analysis():
-                    return 'pack it up pack in it, let me begin'
+                    return free_churro
 
 with ui.nav_panel("Post title analysis"):
     with ui.layout_sidebar():
