@@ -60,42 +60,46 @@ with ui.nav_panel('Time series analysis'):
                     filtered_time_series_data().shape[0]
 
             with ui.value_box(showcase=ICONS["calendar"]):
-                "idk what to put here"
+                "Trend analysis"
+                
+                @render.text
+                def trend_display():
+                    # Get the filtered data
+                    data = filtered_time_series_data()
 
-                @render.express
-                def date_range_display():
-                    "AND ITHACA'S WAITING"
+                    # Group data by week and calculate counts
+                    weekly_counts = data.groupby(pd.Grouper(key='timestamp', freq='W')).size().reset_index(name='Count')
+                    
+                    # Check if there is enough data to calculate a trend
+                    if weekly_counts.empty or len(weekly_counts) < 2:
+                        return "No data available for trend analysis."
+                    
+                    # Convert timestamps to numeric values for regression
+                    weekly_counts['timestamp_numeric'] = (weekly_counts['timestamp'] - weekly_counts['timestamp'].min()).dt.days
+                    x_values = weekly_counts['timestamp_numeric']
+                    y_values = weekly_counts['Count']
+                    
+                    # Perform linear regression to calculate the slope
+                    slope, _ = np.polyfit(x_values, y_values, 1)
+                    
+                    if slope > 0:
+                        trend = "Increasing"
+                    elif slope < 0:
+                        trend = "Decreasing"
+                    else:
+                        trend = "Stable"
+                    
+                    # Return the trend based on the slope
+                    return f"Trend: {trend}"
+
 
             with ui.value_box(showcase=ICONS["hashtag"]):
                 "Selected Topic(s)"
 
                 @render.text
                 def selected_topic():
-                    return 'i am going to turn into a truck now'
-                # def selected_topic():
-                #     # Get the filtered data and ensure only unique topic numbers and words are considered
-                #     data = filtered_by_topic_data().drop_duplicates(subset=['topic_number', 'topic_words'])
-                    
-                #     # Retrieve selected topics
-                #     selected_topics = input.topicSelect()
-                    
-                #     # Handle the case where "All" is selected
-                #     if "All" in selected_topics:
-                #         return "(All Topics Selected: Singapore)"
-
-                #     # Sort the data by topic_number in ascending order
-                #     data = data.sort_values(by='topic_number')
-                    
-                #     # Prepare a list to store the tuples of (topic_number, topic_words)
-                #     selected_topics_info = [
-                #         (topic_number, topic_words)
-                #         for topic_number, topic_words in zip(data['topic_number'])
-                #     ]
-                    
-                #     # Format the output to display as tuples
-                #     return ", ".join([f"({topic_number}: {topic_words})" for topic_number, topic_words in selected_topics_info])
-
-        # with ui.layout_columns(col_widths=[12, 6, 6]):
+                    return "AND ITHACA'S WAITING"
+                
         with ui.layout_columns(height="500px"):
 
             with ui.card(full_screen=True, min_height="400px"):
