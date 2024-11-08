@@ -12,10 +12,11 @@ import pandas as pd
 from wordcloud import WordCloud
 from io import BytesIO
 import base64
+import os
 
 topic_to_words = df.drop_duplicates(subset=['topic_number']).set_index('topic_number')['topic_words'].to_dict()
-topics = ["All"] + df['topic_number'].unique().tolist()
-topic_choices = ["All"] + list(map(str, sorted(df['topic_number'].unique(), key=int)))
+topic_to_words = df[df['topic_number'] != -1].drop_duplicates(subset=['topic_number']).set_index('topic_number')['topic_words'].to_dict()
+topic_choices = ["All"] + [f"{topic}: {topic_to_words[topic]}" for topic in sorted(topic_to_words.keys(), key=int)]
 
 subreddit = df['subreddit'].unique().tolist()
 subreddit = [x for x in subreddit if str(x) != 'nan']
@@ -44,21 +45,21 @@ with ui.nav_panel('Time series analysis'):
             )
 
         with ui.layout_columns(fill=False):
-            with ui.value_box(showcase=ICONS["eye"], style="height: 100px;"):
+            with ui.value_box(showcase=ICONS["eye"]):
                 "Filtered Comments"
 
                 @render.express
                 def total_comments():
                     filtered_by_topic_data().shape[0]
 
-            with ui.value_box(showcase=ICONS["calendar"], style="height: 100px;"):
+            with ui.value_box(showcase=ICONS["calendar"]):
                 "idk what to put here"
 
                 @render.express
                 def date_range_display():
                     "AND ITHACA'S WAITING"
 
-            with ui.value_box(showcase=ICONS["hashtag"], style="height: 100px; font-size: 8px;"):
+            with ui.value_box(showcase=ICONS["hashtag"]):
                 "Selected Topic"
 
                 @render.text
@@ -78,7 +79,8 @@ with ui.nav_panel('Time series analysis'):
                         else:
                             return "No words available for the selected topic."
                         
-        with ui.layout_columns(col_widths=[12, 6, 6]):
+        # with ui.layout_columns(col_widths=[12, 6, 6]):
+        with ui.layout_columns():
 
             with ui.card(full_screen=True):
                 with ui.card_header(class_="d-flex justify-content-between align-items-center"):
@@ -95,32 +97,32 @@ with ui.nav_panel('Time series analysis'):
                     fig.update_layout(height=400)
                     return fig
                 
-            with ui.card(full_screen=True):
-                ui.card_header("Filtered Data Table")
+            # with ui.card(full_screen=True):
+            #     ui.card_header("Filtered Data Table")
 
-                @render.data_frame
-                def table():
-                    return render.DataGrid(filtered_by_topic_data())
+            #     @render.data_frame
+            #     def table():
+            #         return render.DataGrid(filtered_by_topic_data())
 
-            with ui.card(full_screen=True):
-                with ui.card_header(class_="d-flex justify-content-between align-items-center"):
-                    "Username Frequency"
-                    ICONS["filter"]
+            # with ui.card(full_screen=True):
+            #     with ui.card_header(class_="d-flex justify-content-between align-items-center"):
+            #         "Username Frequency"
+            #         ICONS["filter"]
 
-                @render_plotly
-                def username_frequency():
-                    # Get the username data from the filtered dataset, excluding "[deleted]"
-                    usernames = filtered_by_topic_data()['username']
-                    usernames = usernames[usernames != "[deleted]"]  # Exclude "[deleted]"
+            #     @render_plotly
+            #     def username_frequency():
+            #         # Get the username data from the filtered dataset, excluding "[deleted]"
+            #         usernames = filtered_by_topic_data()['username']
+            #         usernames = usernames[usernames != "[deleted]"]  # Exclude "[deleted]"
                     
-                    # Calculate the most frequent usernames
-                    username_freq = usernames.value_counts().nlargest(20)
+            #         # Calculate the most frequent usernames
+            #         username_freq = usernames.value_counts().nlargest(20)
                     
-                    # Create a bar plot for the top 20 most frequent usernames
-                    fig = px.bar(username_freq, x=username_freq.index, y=username_freq.values, 
-                                labels={'x': 'Username', 'y': 'Frequency'}, 
-                                title="Top 20 Most Frequent Usernames (Excluding [deleted])")
-                    fig.update_layout(xaxis={'categoryorder': 'total descending'})
+            #         # Create a bar plot for the top 20 most frequent usernames
+            #         fig = px.bar(username_freq, x=username_freq.index, y=username_freq.values, 
+            #                     labels={'x': 'Username', 'y': 'Frequency'}, 
+            #                     title="Top 20 Most Frequent Usernames (Excluding [deleted])")
+            #         fig.update_layout(xaxis={'categoryorder': 'total descending'})
                     return fig
 
 
@@ -143,41 +145,50 @@ with ui.nav_panel("Post title analysis"):
             
             with ui.card():
                 ui.card_header("Post Title Word Cloud")
-            
-                # @render.image
+
+                # @render.ui
                 # def wordcloud_img():
                 #     # Generate the word cloud from RAKE keywords
                 #     data = filtered_by_post_data()  # Assumes this function returns a DataFrame
                 #     all_text = ' '.join([' '.join(eval(row)) if isinstance(row, str) else '' for row in data['rake_keywords']])
 
-
-                #     # Convert the image to bytes
+                #     # Generate the word cloud
                 #     wordcloud = WordCloud(width=800, height=400, background_color="white").generate(all_text)
-                #     file_path = f"{app_dir}/temp/wordcloud.png"
-                #     wordcloud.to_file(file_path)
-                    
-                #     # Return the path for Shiny Express to display it as an image
-                #     return {"src": file_path, "alt": "Word Cloud"}
+
+                #     # Save the word cloud to an in-memory file
+                #     img_io = BytesIO()
+                #     wordcloud.to_image().save(img_io, format="PNG")
+                #     img_io.seek(0)
+
+                #     # Encode the image in base64
+                #     base64_img = base64.b64encode(img_io.getvalue()).decode('utf-8')
+                #     img_src = f"data:image/png;base64,{base64_img}"
+
+                #     # Return the image as an HTML <img> tag
+                #     return ui.HTML(f'<img src="{img_src}" alt="Word Cloud" style="width: 100%;">')
+
                 @render.ui
                 def wordcloud_img():
-                    # Generate the word cloud from RAKE keywords
-                    data = filtered_by_post_data()  # Assumes this function returns a DataFrame
-                    all_text = ' '.join([' '.join(eval(row)) if isinstance(row, str) else '' for row in data['rake_keywords']])
+                    # Assume selected_subreddit() is a function that returns the selected subreddit
+                    selected_subreddit = input.subredditSelect()  # Replace with the actual input name
 
-                    # Generate the word cloud
-                    wordcloud = WordCloud(width=800, height=400, background_color="white").generate(all_text)
+                    # Convert subreddit name to match the filename format, e.g., "r_Singapore.png"
+                    filename = f"{selected_subreddit.replace('/', '_')}.png"
+                    # filepath = os.path.join(png_directory, filename)
+                    filepath = f'{app_dir}\\wordclouds\\{filename}'
 
-                    # Save the word cloud to an in-memory file
-                    img_io = BytesIO()
-                    wordcloud.to_image().save(img_io, format="PNG")
-                    img_io.seek(0)
-
-                    # Encode the image in base64
-                    base64_img = base64.b64encode(img_io.getvalue()).decode('utf-8')
-                    img_src = f"data:image/png;base64,{base64_img}"
-
-                    # Return the image as an HTML <img> tag
-                    return ui.HTML(f'<img src="{img_src}" alt="Word Cloud" style="width: 100%;">')
+                    # Check if the file exists
+                    if os.path.exists(filepath):
+                        # Load the image file and convert to base64
+                        with open(filepath, "rb") as img_file:
+                            base64_img = base64.b64encode(img_file.read()).decode("utf-8")
+                        img_src = f"data:image/png;base64,{base64_img}"
+                        
+                        # Display the image
+                        return ui.HTML(f'<img src="{img_src}" alt="Word Cloud" style="width: 100%;">')
+                    else:
+                        # Display a placeholder message if the file is not found
+                        return ui.HTML("<p>No word cloud available for the selected subreddit.</p>")
 
 
 with ui.nav_panel("XAI analysis"):
@@ -190,14 +201,16 @@ with ui.nav_panel("XAI analysis"):
 
 @reactive.calc
 def filtered_by_topic_data():
-    # # Retrieve the selected topic number
+    # Retrieve the selected topic number
     selected_topic = input.topicSelect()
     
-    # # Start with the full dataset
+    # Start with the full dataset
     data = df.copy()
-
+    
+    # Check if the selected topic is not "All" and convert it to an integer
     if selected_topic != "All":
-        data = data[data['topic_number'] == int(selected_topic)]
+        topic_number = int(selected_topic.split(":")[0]) if ":" in selected_topic else int(selected_topic)
+        data = data[data['topic_number'] == topic_number]
     
     return data
 
