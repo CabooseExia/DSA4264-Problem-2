@@ -57,7 +57,7 @@ with ui.nav_panel('Time series analysis'):
 
                 @render.express
                 def total_comments():
-                    filtered_by_topic_data().shape[0]
+                    filtered_time_series_data().shape[0]
 
             with ui.value_box(showcase=ICONS["calendar"]):
                 "idk what to put here"
@@ -104,7 +104,7 @@ with ui.nav_panel('Time series analysis'):
                 @render_plotly
                 def topic_plot():
                     # Get the filtered data
-                    data = filtered_by_topic_data()
+                    data = filtered_time_series_data()
 
                     # Group data by week and by topic number, counting occurrences for each
                     topic_data = data.groupby([pd.Grouper(key='timestamp', freq='W'), 'topic_number', 'topic_words']).size().reset_index(name='Count')
@@ -141,7 +141,6 @@ with ui.nav_panel('Time series analysis'):
                     # Customize layout
                     fig.update_layout(height=400)
                     return fig
-                
 
                 
                 # @render_plotly
@@ -200,6 +199,28 @@ with ui.nav_panel('Time series analysis'):
             #         fig.update_layout(xaxis={'categoryorder': 'total descending'})
             #         return fig
 
+
+with ui.nav_panel('Topic analysis'):
+    with ui.layout_sidebar():
+        with ui.sidebar(open="desktop"):
+            # Create the topic selection input with "All Topics" as the first option
+            ui.input_selectize(
+                "topicSelect_2", 
+                "Choose Topic(s):", 
+                choices=topic_choices, 
+                multiple=True,  # Allow multiple selections
+                options={"placeholder": "Select one or more topics..."}
+    )
+            # ui.input_action_button("add_all", "Add All Topics")
+            ui.input_action_button("reset_2", "Reset Selection")
+        
+        with ui.layout_columns(fill=False):
+            with ui.card():
+                ui.card_header("Keyword Frequency")
+
+                @render.text
+                def keyword_analysis():
+                    return 'pack it up pack in it, let me begin'
 
 with ui.nav_panel("Post title analysis"):
     with ui.layout_sidebar():
@@ -319,9 +340,31 @@ with ui.nav_panel("XAI analysis"):
 # # --------------------------------------------------------
 
 @reactive.calc
-def filtered_by_topic_data():
+def filtered_time_series_data():
     # Retrieve the selected topics (could be a list if multiple are selected)
     selected_topics = input.topicSelect()
+    
+    # Start with the full dataset
+    data = df.copy()
+    
+    # Check if "All" is in the selection, return the entire dataset
+    if "All" in selected_topics:
+        return data
+    
+    # Convert selected topics to integers if they contain topic numbers
+    topic_numbers = [
+        int(topic.split(":")[0]) if ":" in topic else int(topic)
+        for topic in selected_topics
+    ]
+    
+    # Filter the dataset for the selected topics
+    data = data[data['topic_number'].isin(topic_numbers)]
+    
+    return data
+
+def filtered_topic_data():
+    # Retrieve the selected topics (could be a list if multiple are selected)
+    selected_topics = input.topicSelect_2()
     
     # Start with the full dataset
     data = df.copy()
@@ -383,3 +426,8 @@ def reset_topics():
     # Clear the topicSelect input selection
     ui.update_selectize("topicSelect", selected=[])
 
+@reactive.Effect
+@reactive.event(input.reset_2)  # Trigger when "Reset Selection" button is clicked
+def reset_topics():
+    # Clear the topicSelect input selection
+    ui.update_selectize("topicSelect_2", selected=[])
