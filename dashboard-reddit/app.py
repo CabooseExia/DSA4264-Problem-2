@@ -34,6 +34,7 @@ ICONS = {
     "calendar": fa.icon_svg("calendar"),
     "hashtag": fa.icon_svg("hashtag"),
     "filter": fa.icon_svg("filter"),
+    "arrow-trend-up": fa.icon_svg("arrow-trend-up"),
 }
 
 # Main content with value boxes and plots
@@ -59,7 +60,7 @@ with ui.nav_panel('Time series analysis'):
                 def total_comments():
                     filtered_time_series_data().shape[0]
 
-            with ui.value_box(showcase=ICONS["calendar"]):
+            with ui.value_box(showcase=ICONS["arrow-trend-up"]):
                 "Trend analysis"
                 
                 @render.text
