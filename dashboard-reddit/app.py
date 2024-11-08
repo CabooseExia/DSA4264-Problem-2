@@ -13,14 +13,17 @@ from wordcloud import WordCloud
 from io import BytesIO
 import base64
 import os
+import numpy as np
 
 topic_to_words = df.drop_duplicates(subset=['topic_number']).set_index('topic_number')['topic_words'].to_dict()
 topic_to_words = df[df['topic_number'] != -1].drop_duplicates(subset=['topic_number']).set_index('topic_number')['topic_words'].to_dict()
-topic_choices = ["All"] + [f"{topic}: {topic_to_words[topic]}" for topic in sorted(topic_to_words.keys(), key=int)]
+# topic_choices = ["All"] + [f"{topic}: {topic_to_words[topic]}" for topic in sorted(topic_to_words.keys(), key=int)]
+topic_choices = [f"{topic}: {topic_to_words[topic]}" for topic in sorted(topic_to_words.keys())]
 
 subreddit = df['subreddit'].unique().tolist()
 subreddit = [x for x in subreddit if str(x) != 'nan']
-subreddit_choices = ["All"] + subreddit
+# subreddit_choices = ["All"] + subreddit
+subreddit_choices = subreddit
 
 ui.page_opts(title="Reddit Comment Analysis Dashboard", fillable=True)
 
@@ -38,11 +41,15 @@ with ui.nav_panel('Time series analysis'):
     with ui.layout_sidebar():
         with ui.sidebar(open="desktop"):
             # Create the topic selection input with "All Topics" as the first option
-            ui.input_select(
+            ui.input_selectize(
                 "topicSelect", 
-                "Choose Topic:", 
-                choices=topic_choices
-            )
+                "Choose Topic(s):", 
+                choices=topic_choices, 
+                multiple=True,  # Allow multiple selections
+                options={"placeholder": "Select one or more topics..."}
+    )
+            # ui.input_action_button("add_all", "Add All Topics")
+            ui.input_action_button("reset", "Reset Selection")
 
         with ui.layout_columns(fill=False):
             with ui.value_box(showcase=ICONS["eye"]):
@@ -60,43 +67,102 @@ with ui.nav_panel('Time series analysis'):
                     "AND ITHACA'S WAITING"
 
             with ui.value_box(showcase=ICONS["hashtag"]):
-                "Selected Topic"
+                "Selected Topic(s)"
 
                 @render.text
                 def selected_topic():
-                    # Get the filtered data
-                    data = filtered_by_topic_data()
+                    return 'i am going to turn into a truck now'
+                # def selected_topic():
+                #     # Get the filtered data and ensure only unique topic numbers and words are considered
+                #     data = filtered_by_topic_data().drop_duplicates(subset=['topic_number', 'topic_words'])
                     
-                    # Check if "All" is selected and return all topics and words if true
-                    if input.topicSelect() == "All":
-                        return 'Singapore'
-                    else:
-                        # Display only the selected topic
-                        if not data.empty:
-                            topic_words = data['topic_words'].iloc[0]
-                            topic_number = data['topic_number'].iloc[0]
-                            return f"Topic {topic_number}: {topic_words}"
-                        else:
-                            return "No words available for the selected topic."
-                        
+                #     # Retrieve selected topics
+                #     selected_topics = input.topicSelect()
+                    
+                #     # Handle the case where "All" is selected
+                #     if "All" in selected_topics:
+                #         return "(All Topics Selected: Singapore)"
+
+                #     # Sort the data by topic_number in ascending order
+                #     data = data.sort_values(by='topic_number')
+                    
+                #     # Prepare a list to store the tuples of (topic_number, topic_words)
+                #     selected_topics_info = [
+                #         (topic_number, topic_words)
+                #         for topic_number, topic_words in zip(data['topic_number'])
+                #     ]
+                    
+                #     # Format the output to display as tuples
+                #     return ", ".join([f"({topic_number}: {topic_words})" for topic_number, topic_words in selected_topics_info])
+
         # with ui.layout_columns(col_widths=[12, 6, 6]):
         with ui.layout_columns():
 
             with ui.card(full_screen=True):
                 with ui.card_header(class_="d-flex justify-content-between align-items-center"):
                     ui.card_header("Time Series")
-
                 @render_plotly
                 def topic_plot():
-                    topic_data = filtered_by_topic_data().groupby(pd.Grouper(key='timestamp', freq='W')).size().reset_index(name='Count')
-                    topic_data['EMA_4'] = topic_data['Count'].rolling(window=4).mean()
+                    # Get the filtered data
+                    data = filtered_by_topic_data()
 
-                    fig = px.line(topic_data, x='timestamp', y='Count', title="Weekly Count and 4-Week EMA")
-                    fig.add_scatter(x=topic_data['timestamp'], y=topic_data['EMA_4'], mode='lines', name="4-Week EMA")
+                    # Group data by week and by topic number, counting occurrences for each
+                    topic_data = data.groupby([pd.Grouper(key='timestamp', freq='W'), 'topic_number']).size().reset_index(name='Count')
 
+                    # Check if the data is empty
+                    if topic_data.empty:
+                        # Create an empty plot with a placeholder title
+                        fig = px.line(title="No data available for the selected topics")
+                        fig.update_layout(height=400)
+                        return fig
+
+                    # Create the Plotly figure
+                    fig = px.line(topic_data, x='timestamp', y='Count', color='topic_number', title="Weekly Count with Linear Trend Line by Topic")
+
+                    # Add a linear regression trend line for each topic
+                    for topic in topic_data['topic_number'].unique():
+                        topic_subset = topic_data[topic_data['topic_number'] == topic]
+                        
+                        # Perform linear regression to calculate the trend line for this topic
+                        x_values = np.arange(len(topic_subset))  # X-axis as indices for linear regression
+                        y_values = topic_subset['Count']
+                        slope, intercept = np.polyfit(x_values, y_values, 1)
+                        trend_line = slope * x_values + intercept
+
+                        # Add the trend line to the plot for the current topic
+                        fig.add_scatter(x=topic_subset['timestamp'], y=trend_line, mode='lines', name=f"Trend Line (Topic {topic})")
+
+                    # Customize layout
                     fig.update_layout(height=400)
                     return fig
-                
+                # @render_plotly
+                # def topic_plot():
+                #     # Group data by week and count occurrences
+                #     topic_data = filtered_by_topic_data().groupby(pd.Grouper(key='timestamp', freq='W')).size().reset_index(name='Count')
+
+                #     # Check if the data is empty
+                #     if topic_data.empty:
+                #         # Create an empty plot with a placeholder title
+                #         fig = px.line(title="No data available for the selected topics")
+                #         fig.update_layout(height=400)
+                #         return fig
+
+                #     # Perform linear regression to calculate the trend line
+                #     x_values = np.arange(len(topic_data))  # X-axis as indices for linear regression
+                #     y_values = topic_data['Count']
+                #     slope, intercept = np.polyfit(x_values, y_values, 1)
+                #     trend_line = slope * x_values + intercept
+
+                #     # Create the Plotly figure
+                #     fig = px.line(topic_data, x='timestamp', y='Count', title="Weekly Count with Linear Trend Line")
+
+                #     # Add the linear trend line to the plot
+                #     fig.add_scatter(x=topic_data['timestamp'], y=trend_line, mode='lines', name="Trend Line (Linear Regression)")
+
+                #     # Customize layout
+                #     fig.update_layout(height=400)
+                #     return fig
+                                
             # with ui.card(full_screen=True):
             #     ui.card_header("Filtered Data Table")
 
@@ -123,7 +189,7 @@ with ui.nav_panel('Time series analysis'):
             #                     labels={'x': 'Username', 'y': 'Frequency'}, 
             #                     title="Top 20 Most Frequent Usernames (Excluding [deleted])")
             #         fig.update_layout(xaxis={'categoryorder': 'total descending'})
-                    return fig
+            #         return fig
 
 
 with ui.nav_panel("Post title analysis"):
@@ -189,7 +255,27 @@ with ui.nav_panel("Post title analysis"):
                     else:
                         # Display a placeholder message if the file is not found
                         return ui.HTML("<p>No word cloud available for the selected subreddit.</p>")
+                    
 
+            with ui.card():
+                ui.card_header("Username Frequency")
+
+                @render.ui
+                def subreddit_frequency():
+                    # Get the subreddit data from the filtered dataset
+                    subreddits = filtered_by_post_data()['username']
+                    
+                    # Exclude entries with "[deleted]"
+                    subreddits = subreddits[subreddits != "[deleted]"]
+                    
+                    # Calculate the most frequent subreddits
+                    subreddit_freq = subreddits.value_counts().nlargest(20)
+                    
+                    # Convert to a list of strings in the format "Subreddit: Frequency"
+                    top_subreddits_list = [f"{subreddit}: {count}" for subreddit, count in subreddit_freq.items()]
+                    
+                    # Render as a UI component, separated by line breaks
+                    return ui.HTML("<br>".join(top_subreddits_list))
 
 with ui.nav_panel("XAI analysis"):
     "PENELOPE'S WAITING FOR ME, so full speed ahead'."
@@ -201,16 +287,24 @@ with ui.nav_panel("XAI analysis"):
 
 @reactive.calc
 def filtered_by_topic_data():
-    # Retrieve the selected topic number
-    selected_topic = input.topicSelect()
+    # Retrieve the selected topics (could be a list if multiple are selected)
+    selected_topics = input.topicSelect()
     
     # Start with the full dataset
     data = df.copy()
     
-    # Check if the selected topic is not "All" and convert it to an integer
-    if selected_topic != "All":
-        topic_number = int(selected_topic.split(":")[0]) if ":" in selected_topic else int(selected_topic)
-        data = data[data['topic_number'] == topic_number]
+    # Check if "All" is in the selection, return the entire dataset
+    if "All" in selected_topics:
+        return data
+    
+    # Convert selected topics to integers if they contain topic numbers
+    topic_numbers = [
+        int(topic.split(":")[0]) if ":" in topic else int(topic)
+        for topic in selected_topics
+    ]
+    
+    # Filter the dataset for the selected topics
+    data = data[data['topic_number'].isin(topic_numbers)]
     
     return data
 
@@ -238,4 +332,21 @@ def filtered_by_post_data():
     except Exception as e:
         print(f"Error in filtered_by_post_data: {e}")
         return pd.DataFrame() 
+
+# @reactive.Effect
+# @reactive.event(input.add_all)  # Trigger when "Add All Topics" button is clicked
+# def add_all_topics():
+#     # Set each topic individually to allow easier removal later
+#     all_topics = [topic for topic in topic_choices if topic != "All"]
+#     for topic in all_topics:
+#         # Append the topic to the current selection
+#         current_selection = input.topicSelect() or []
+#         if topic not in current_selection:
+#             ui.update_selectize("topicSelect", selected=current_selection + [topic])
+
+@reactive.Effect
+@reactive.event(input.reset)  # Trigger when "Reset Selection" button is clicked
+def reset_topics():
+    # Clear the topicSelect input selection
+    ui.update_selectize("topicSelect", selected=[])
 
