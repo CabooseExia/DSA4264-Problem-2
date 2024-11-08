@@ -238,7 +238,7 @@ with ui.nav_panel("Post title analysis"):
                 "Choose subreddit:", 
                 choices=subreddit_choices
             )
-        with ui.layout_column_wrap():
+        with ui.layout_column_wrap(height="300px"):
             with ui.card():
                 ui.card_header(":)")
 
