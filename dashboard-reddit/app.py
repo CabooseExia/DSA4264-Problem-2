@@ -25,7 +25,7 @@ subreddit = [x for x in subreddit if str(x) != 'nan']
 # subreddit_choices = ["All"] + subreddit
 subreddit_choices = subreddit
 
-ui.page_opts(title="Reddit Comment Analysis Dashboard", fillable=True)
+ui.page_opts(title="Reddit Comment Analysis Dashboard", fillable=False)
 
 # Icons for the main content
 ICONS = {
@@ -96,51 +96,51 @@ with ui.nav_panel('Time series analysis'):
                 #     return ", ".join([f"({topic_number}: {topic_words})" for topic_number, topic_words in selected_topics_info])
 
         # with ui.layout_columns(col_widths=[12, 6, 6]):
-        with ui.layout_columns():
+        with ui.layout_columns(height="500px"):
 
-            with ui.card(full_screen=True):
-                with ui.card_header(class_="d-flex justify-content-between align-items-center"):
+            with ui.card(full_screen=True, min_height="400px"):
+                with ui.card_header(class_="fixed-size-card"):
                     ui.card_header("Time Series")
-                @render_plotly
-                def topic_plot():
-                    # Get the filtered data
-                    data = filtered_time_series_data()
+                    @render_plotly
+                    def topic_plot():
+                        # Get the filtered data
+                        data = filtered_time_series_data()
 
-                    # Group data by week and by topic number, counting occurrences for each
-                    topic_data = data.groupby([pd.Grouper(key='timestamp', freq='W'), 'topic_number', 'topic_words']).size().reset_index(name='Count')
+                        # Group data by week and by topic number, counting occurrences for each
+                        topic_data = data.groupby([pd.Grouper(key='timestamp', freq='W'), 'topic_number', 'topic_words']).size().reset_index(name='Count')
 
-                    # Check if the data is empty
-                    if topic_data.empty:
-                        # Create an empty plot with a placeholder title
-                        fig = px.line(title="No data available for the selected topics")
+                        # Check if the data is empty
+                        if topic_data.empty:
+                            # Create an empty plot with a placeholder title
+                            fig = px.line(title="No data available for the selected topics")
+                            fig.update_layout(height=400)
+                            return fig
+
+                        # Aggregate data across all topics by week
+                        overall_weekly_counts = topic_data.groupby('timestamp')['Count'].sum().reset_index()
+
+                        # Create the Plotly figure for individual topic counts, including topic names in the legend
+                        fig = px.line(topic_data, x='timestamp', y='Count', color='topic_number', title="Weekly Count with Combined Linear Trend Line",
+                                    labels={'color': 'Topic'})  # Customize legend label to show as 'Topic'
+
+                        # Update trace names to include topic names in the legend
+                        for trace in fig.data:
+                            topic_number = trace.name  # This is the topic_number used in the color legend
+                            topic_name = topic_data[topic_data['topic_number'] == int(topic_number)]['topic_words'].iloc[0]
+                            trace.name = f"Topic {topic_number} - {topic_name}"
+
+                        # Calculate the combined trend line based on overall weekly counts
+                        x_values = np.arange(len(overall_weekly_counts))  # X-axis as indices for linear regression
+                        y_values = overall_weekly_counts['Count']
+                        slope, intercept = np.polyfit(x_values, y_values, 1)
+                        combined_trend_line = slope * x_values + intercept
+
+                        # Add the combined trend line to the plot
+                        fig.add_scatter(x=overall_weekly_counts['timestamp'], y=combined_trend_line, mode='lines', name="Combined Trend Line")
+
+                        # Customize layout
                         fig.update_layout(height=400)
                         return fig
-
-                    # Aggregate data across all topics by week
-                    overall_weekly_counts = topic_data.groupby('timestamp')['Count'].sum().reset_index()
-
-                    # Create the Plotly figure for individual topic counts, including topic names in the legend
-                    fig = px.line(topic_data, x='timestamp', y='Count', color='topic_number', title="Weekly Count with Combined Linear Trend Line",
-                                labels={'color': 'Topic'})  # Customize legend label to show as 'Topic'
-
-                    # Update trace names to include topic names in the legend
-                    for trace in fig.data:
-                        topic_number = trace.name  # This is the topic_number used in the color legend
-                        topic_name = topic_data[topic_data['topic_number'] == int(topic_number)]['topic_words'].iloc[0]
-                        trace.name = f"Topic {topic_number} - {topic_name}"
-
-                    # Calculate the combined trend line based on overall weekly counts
-                    x_values = np.arange(len(overall_weekly_counts))  # X-axis as indices for linear regression
-                    y_values = overall_weekly_counts['Count']
-                    slope, intercept = np.polyfit(x_values, y_values, 1)
-                    combined_trend_line = slope * x_values + intercept
-
-                    # Add the combined trend line to the plot
-                    fig.add_scatter(x=overall_weekly_counts['timestamp'], y=combined_trend_line, mode='lines', name="Combined Trend Line")
-
-                    # Customize layout
-                    fig.update_layout(height=400)
-                    return fig
 
                 
                 # @render_plotly
@@ -199,6 +199,13 @@ with ui.nav_panel('Time series analysis'):
             #         fig.update_layout(xaxis={'categoryorder': 'total descending'})
             #         return fig
 
+        with ui.layout_columns(min_height="400px"):
+            with ui.card():
+                ui.card_header("Test")
+
+                @render.text
+                def test_analysis():
+                    return 'What are you doing here...'
 
 with ui.nav_panel('Topic analysis'):
     with ui.layout_sidebar():
