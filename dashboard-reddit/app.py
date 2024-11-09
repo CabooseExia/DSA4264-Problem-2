@@ -91,7 +91,7 @@ with ui.nav_panel('Time series analysis'):
                         trend = "Stable"
                     
                     # Return the trend based on the slope
-                    return f"Trend: {trend}"
+                    return trend
 
 
             with ui.value_box(showcase=ICONS["hashtag"]):
@@ -204,13 +204,12 @@ with ui.nav_panel('Time series analysis'):
             #         fig.update_layout(xaxis={'categoryorder': 'total descending'})
             #         return fig
 
-        with ui.layout_columns(min_height="400px"):
-            with ui.card():
-                ui.card_header("Test")
+        with ui.card(full_screen=True):
+            ui.card_header("Filtered Data Table")
 
-                @render.text
-                def test_analysis():
-                    return 'What are you doing here...'
+            @render.data_frame
+            def table():
+                return render.DataGrid(filtered_time_series_data())
 
 with ui.nav_panel('Topic analysis'):
     with ui.layout_sidebar():
