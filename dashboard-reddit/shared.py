@@ -46,15 +46,21 @@ def generate_lime_html(text, num_features=10, threshold=0.05):
     # Tokenize the original text
     tokens = text.split()  # Simple split; adjust if necessary for more complex tokenization
     
-    # Generate HTML for tokens in original order with LIME-based coloring
+    # Generate HTML for tokens in original order with Integrated Gradients-like coloring
     html_text = "<div style='font-family: Arial, sans-serif; font-size: 16px;'>"
     for token in tokens:
         score = explanation_dict.get(token, 0)  # Default score of 0 if token not in explanation
-        color = f"rgba(255, 0, 0, {min(1, abs(score) * 3)})" if score > 0 else f"rgba(0, 0, 255, {min(1, abs(score) * 3)})"
+        # Apply green for positive scores and red for negative, with intensity based on the score's magnitude
+        color = (
+            f"rgba(152, 251, 152, {min(1, abs(score) * 3)})" if score > 0 else 
+            f"rgba(255, 99, 71, {min(1, abs(score) * 3)})"
+        )
         style = f"background-color: {color}; padding: 2px 5px; margin: 2px; display: inline-block; border-radius: 4px; color: black;"
         html_text += f"<span style='{style}'>{token}</span> "
     html_text += "</div>"
+    
     return html_text
+
 
 def compute_attributions(text): #for integrated gradients
     model, tokenizer = load_model()

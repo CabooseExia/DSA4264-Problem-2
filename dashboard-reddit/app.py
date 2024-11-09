@@ -21,6 +21,9 @@ import plotly.graph_objects as go
 from IPython.display import display, HTML
 from captum.attr import IntegratedGradients
 
+earliest_date = df['timestamp'].min()
+latest_date = df['timestamp'].max()
+
 topic_to_words = df.drop_duplicates(subset=['topic_number']).set_index('topic_number')['topic_words'].to_dict()
 topic_to_words = df[df['topic_number'] != -1].drop_duplicates(subset=['topic_number']).set_index('topic_number')['topic_words'].to_dict()
 # topic_choices = ["All"] + [f"{topic}: {topic_to_words[topic]}" for topic in sorted(topic_to_words.keys(), key=int)]
@@ -28,8 +31,7 @@ topic_choices = [f"{topic}: {topic_to_words[topic]}" for topic in sorted(topic_t
 
 subreddit = df['subreddit'].unique().tolist()
 subreddit = [x for x in subreddit if str(x) != 'nan']
-# subreddit_choices = ["All"] + subreddit
-subreddit_choices = subreddit
+subreddit_choices = ["All"] + subreddit
 
 model, tokenizer = load_model()
 explainer = LimeTextExplainer(class_names=["Non-trigger", "Trigger"])
@@ -51,6 +53,12 @@ ICONS = {
 with ui.nav_panel('Time series analysis'):
     with ui.layout_sidebar():
         with ui.sidebar(open="desktop"):
+            ui.input_date_range(
+                "date_range", 
+                "Select Date Range:", 
+                start=str(earliest_date.date()),  # Convert to string for display
+                end=str(latest_date.date())       # Convert to string for display
+            )
             # Create the topic selection input with "All Topics" as the first option
             ui.input_selectize(
                 "topicSelect", 
@@ -259,17 +267,31 @@ with ui.nav_panel("Post title analysis"):
                 "Choose subreddit:", 
                 choices=subreddit_choices
             )
+            ui.input_text("search_keywords", "Enter keywords (comma-separated):", placeholder="e.g., elections, polling, votes")
+            @reactive.Calc
+            def get_keywords_to_search():
+                # Get the text input from the search bar
+                keywords_text = input.search_keywords().strip()
+                # Split the input into a list of keywords based on commas
+                keywords_to_search = [keyword.strip() for keyword in keywords_text.split(",") if keyword.strip()]
+                return keywords_to_search
+
         with ui.layout_column_wrap(height="300px"):
             with ui.card(full_screen=True, min_height="300px"):
                 ui.card_header("Top 20 Posts by Comments")
 
                 @render.ui
                 def top_20_posts():
-                    # Filter data based on the selected subreddit
+                    # Get the selected subreddit from the dropdown
                     selected_subreddit = input.subredditSelect()  # Assuming you have a dropdown for subreddit selection
-                    data = df[df['subreddit'] == selected_subreddit]
+                    
+                    # Filter data based on the selected subreddit
+                    if selected_subreddit == "All":
+                        data = df  # Use the entire dataset when "All" is selected
+                    else:
+                        data = df[df['subreddit'] == selected_subreddit]
 
-                    # Check if there's data for the selected subreddit
+                    # Check if there's data for the selected subreddit or all data
                     if data.empty:
                         return ui.HTML("<p>No posts available for the selected subreddit.</p>")
                     
@@ -354,28 +376,80 @@ with ui.nav_panel("Post title analysis"):
                     # Render as a UI component, separated by line breaks
                     return ui.HTML("<br>".join(top_subreddits_list))
         
-        with ui.layout_column_wrap():
-            with ui.card():
-                ui.card_header("Post Title hate analysis")
+        with ui.layout_column_wrap(height="400px"):
+            # with ui.card():
+            #     ui.card_header("Post Title hate analysis")
 
-                @render.ui
-                def general_proportion_of_hate_comments_img():
-                    filepath = f'{app_dir}\\wordclouds\\general_proportion_of_hate_comments.png'
+            #     @render.ui
+            #     def general_proportion_of_hate_comments_img():
+            #         filepath = f'{app_dir}\\wordclouds\\general_proportion_of_hate_comments.png'
 
-                # Check if the file exists
-                    if os.path.exists(filepath):
-                        # Load the image file and convert to base64
-                        with open(filepath, "rb") as img_file:
-                            base64_img = base64.b64encode(img_file.read()).decode("utf-8")
-                        img_src = f"data:image/png;base64,{base64_img}"
+            #     # Check if the file exists
+            #         if os.path.exists(filepath):
+            #             # Load the image file and convert to base64
+            #             with open(filepath, "rb") as img_file:
+            #                 base64_img = base64.b64encode(img_file.read()).decode("utf-8")
+            #             img_src = f"data:image/png;base64,{base64_img}"
                         
-                        # Display the image
-                        return ui.HTML(f'<img src="{img_src}" alt="Word Cloud" style="width: 100%;">')
-                    else:
-                        # Display a placeholder message if the file is not found
-                        return ui.HTML("<p>No word cloud available for the selected subreddit.</p>")
+            #             # Display the image
+            #             return ui.HTML(f'<img src="{img_src}" alt="Word Cloud" style="width: 100%;">')
+            #         else:
+            #             # Display a placeholder message if the file is not found
+            #             return ui.HTML("<p>No word cloud available for the selected subreddit.</p>")
+            with ui.card():
+                ui.card_header("Total Keyword Occurrences Over Time")
+
+                @render_plotly
+                def display_keyword_trend():
+                    # Get the keywords from the user input and process them
+                    keywords_text = input.search_keywords()  # Assume `search_keywords` input holds comma-separated keywords
+                    keywords_to_search = [kw.strip() for kw in keywords_text.split(",") if kw.strip()]  # Clean up and split keywords
                     
-                    
+                    # If no keywords are provided, return an empty figure
+                    if not keywords_to_search:
+                        return go.Figure().update_layout(title="No keywords entered.")
+
+                    # Fetch the filtered data
+                    data = filtered_by_post_data()
+
+                    # Check if data is empty after filtering
+                    if data.empty:
+                        return go.Figure().update_layout(title="No data available for the selected keywords.")
+
+                    # Convert 'timestamp' to 'month' for aggregation
+                    data['month'] = data['timestamp'].dt.to_period('M')
+
+                    # Initialize a DataFrame to hold keyword counts
+                    keyword_counts = pd.DataFrame()
+
+                    # Count occurrences of each keyword and store in `keyword_counts`
+                    for keyword in keywords_to_search:
+                        keyword_counts[keyword] = data['rake_keywords'].str.count(keyword)
+
+                    # Sum keyword counts by month
+                    monthly_keyword_counts = keyword_counts.groupby(data['month']).sum().reset_index()
+
+                    # Calculate total counts of all keywords each month
+                    monthly_keyword_counts['total_counts'] = monthly_keyword_counts[keywords_to_search].sum(axis=1)
+                    plot_data = monthly_keyword_counts[['month', 'total_counts']]
+                    plot_data['month'] = plot_data['month'].astype(str)
+
+                    # Create the Plotly line plot
+                    fig = px.line(
+                        plot_data, x='month', y='total_counts', title='Total Keyword Occurrences Over Time',
+                        markers=True, line_shape='linear'
+                    )
+
+                    # Customize the layout
+                    fig.update_layout(
+                        xaxis_title='Month',
+                        yaxis_title='Total Count of Keywords',
+                        xaxis_tickangle=-45,
+                        template='plotly_white'
+                    )
+
+                    return fig
+
 
 with ui.nav_panel("Trigger analysis"):
     with ui.layout_sidebar():
@@ -459,14 +533,14 @@ with ui.nav_panel("Trigger analysis"):
                         if probs is None:
                             return go.Figure()  # Return an empty figure if no text is entered
 
-                        # Create the Plotly bar plot
+                        # Create the Plotly bar plot with updated colors for Integrated Gradients style
                         fig = go.Figure(
                             data=[
                                 go.Bar(
                                     x=[probs["Non-trigger"], probs["Trigger"]],
                                     y=["Non-trigger", "Trigger"],
                                     orientation='h',
-                                    marker_color=["#add8e6", "#ffa07a"],  # Colors for each class
+                                    marker_color=["#98FB98", "#FF6347"],  # Updated colors to match Integrated Gradients scheme
                                     text=[f"{probs['Non-trigger']:.2f}", f"{probs['Trigger']:.2f}"],  # Display values
                                     textposition="auto",  # Automatically place text inside or outside the bar
                                     textfont=dict(size=16, color="black", family="Arial, bold"),  # Enlarge and bold the text inside bars
@@ -490,9 +564,9 @@ with ui.nav_panel("Trigger analysis"):
                         return fig
                     else:
                         probs = integrated_gradients_probabilities()
-
-                        if probs is None:
-                            return go.Figure()  # Return an empty figure if no text is entered
+                        input_text = input.input_text()
+                        if not input_text or input_text.strip() == "":
+                            return go.Figure()
 
                         # Create the Plotly bar plot for Integrated Gradients
                         fig = go.Figure(
@@ -561,10 +635,10 @@ with ui.nav_panel("Trigger analysis"):
                         # Unpack words and scores
                         words, scores = zip(*explanation_list)  # Separate words and their scores
 
-                        # Define colors based on contribution direction
-                        colors = ["#ffa07a" if score > 0 else "#add8e6" for score in scores]
+                        # Define colors based on score direction (positive or negative)
+                        colors = ["#98FB98" if score > 0 else "#FF6347" for score in scores]  # Light green for positive, red for negative
 
-                        # Create the Plotly bar plot
+                        # Create the Plotly bar plot with the new color scheme
                         fig = go.Figure(
                             data=[
                                 go.Bar(
@@ -642,9 +716,11 @@ with ui.nav_panel("Trigger analysis"):
                 def display_lime_html_text():
                     xai = input.card_selection() 
                     text = input.input_text()
-                    if xai == "Lime":
-                        if text is None or not text:
+
+                    if text is None or not text:
                             return ui.HTML("<p>Enter text to see the explanation.</p>")
+                    
+                    if xai == "Lime":
                         # Generate HTML text with token colors and styles based on LIME
                         html_content = generate_lime_html(text)
                         
@@ -665,23 +741,26 @@ with ui.nav_panel("Trigger analysis"):
 def filtered_time_series_data():
     # Retrieve the selected topics (could be a list if multiple are selected)
     selected_topics = input.topicSelect()
+    selected_date_range = input.date_range()  # Retrieve selected date range
     
     # Start with the full dataset
     data = df.copy()
     
     # Check if "All" is in the selection, return the entire dataset
-    if "All" in selected_topics:
-        return data
+    if "All" not in selected_topics:
+        # Convert selected topics to integers if they contain topic numbers
+        topic_numbers = [
+            int(topic.split(":")[0]) if ":" in topic else int(topic)
+            for topic in selected_topics
+        ]
+        # Filter the dataset for the selected topics
+        data = data[data['topic_number'].isin(topic_numbers)]
     
-    # Convert selected topics to integers if they contain topic numbers
-    topic_numbers = [
-        int(topic.split(":")[0]) if ":" in topic else int(topic)
-        for topic in selected_topics
-    ]
-    
-    # Filter the dataset for the selected topics
-    data = data[data['topic_number'].isin(topic_numbers)]
-    
+    # Filter the data for the selected date range
+    if selected_date_range:
+        start_date, end_date = pd.to_datetime(selected_date_range[0]), pd.to_datetime(selected_date_range[1])
+        data = data[(data['timestamp'] >= start_date) & (data['timestamp'] <= end_date)]
+
     return data
 
 def filtered_topic_data():
