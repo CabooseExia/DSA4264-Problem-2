@@ -2,7 +2,7 @@ import faicons as fa
 import plotly.express as px
 
 # Load data and compute static values
-from shared import app_dir, df, free_churro, load_model, lime_predict, generate_lime_html, compute_attributions, generate_integrated_gradients_html
+from shared import app_dir, df, free_churro, final_topic_overview, load_model, lime_predict, generate_lime_html, compute_attributions, generate_integrated_gradients_html
 from shinywidgets import render_plotly
 
 from shiny import reactive, render
@@ -10,6 +10,9 @@ from shiny.express import input, ui
 
 import pandas as pd
 from wordcloud import WordCloud
+from collections import Counter
+from keybert import KeyBERT
+import matplotlib.pyplot as plt
 from io import BytesIO
 import base64
 import os
@@ -20,6 +23,7 @@ from lime.lime_text import LimeTextExplainer
 import plotly.graph_objects as go
 from IPython.display import display, HTML
 from captum.attr import IntegratedGradients
+from transformers import AutoTokenizer, AutoModel
 
 earliest_date = df['timestamp'].min()
 latest_date = df['timestamp'].max()
@@ -36,6 +40,45 @@ subreddit_choices = ["All"] + subreddit
 model, tokenizer = load_model()
 explainer = LimeTextExplainer(class_names=["Non-trigger", "Trigger"])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+model_name = 'sentence-transformers/all-MiniLM-L6-v2'
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+transformer_model = AutoModel.from_pretrained(model_name).to(device)
+kw_model = KeyBERT(model=transformer_model)
+def generate_keyword_wordcloud(docs, ngram_range=(2, 2), top_n=15, diversity=0.8):
+    # Use the preloaded KeyBERT model with GPU support
+    global kw_model
+
+    # Extract keywords (processed on GPU)
+    keywords = kw_model.extract_keywords(
+        docs=list(docs), 
+        keyphrase_ngram_range=ngram_range, 
+        top_n=top_n, 
+        diversity=diversity
+    )
+    
+    # Flatten all keyword phrases across lists
+    all_phrases = [phrase for sublist in keywords for phrase, _ in sublist]
+
+    # Count the frequency of each phrase
+    phrase_counts = Counter(all_phrases)
+
+    # Get the top 20 most frequent phrases
+    top_20_phrases = phrase_counts.most_common(20)
+    top_20_phrase_counts = dict(top_20_phrases)
+
+    # Create and display word cloud based on top 20 phrases
+    wordcloud = WordCloud(width=800, height=400, background_color='white').generate_from_frequencies(top_20_phrase_counts)
+
+    # Save the generated word cloud image as a base64 string
+    img_buffer = BytesIO()
+    wordcloud.to_image().save(img_buffer, format="PNG")
+    img_buffer.seek(0)
+    img_base64 = base64.b64encode(img_buffer.read()).decode('utf-8')
+    
+    return img_base64
+
 
 ui.page_opts(title="Reddit Comment Analysis Dashboard", fillable=False)
 
@@ -59,14 +102,16 @@ with ui.nav_panel('Time series analysis'):
                 start=str(earliest_date.date()),  # Convert to string for display
                 end=str(latest_date.date())       # Convert to string for display
             )
+            ui.input_action_button("reset_date", "Reset Date Range")
             # Create the topic selection input with "All Topics" as the first option
             ui.input_selectize(
                 "topicSelect", 
                 "Choose Topic(s):", 
                 choices=topic_choices, 
                 multiple=True,  # Allow multiple selections
-                options={"placeholder": "Select one or more topics..."}
-    )
+                options={"placeholder": "Select one or more topics..."},
+                remove_button=True  # Show the remove button for each selected item
+            )
             # ui.input_action_button("add_all", "Add All Topics")
             ui.input_action_button("reset", "Reset Selection")
 
@@ -222,14 +267,11 @@ with ui.nav_panel('Time series analysis'):
             #         fig.update_layout(xaxis={'categoryorder': 'total descending'})
             #         return fig
 
-        with ui.card(full_screen=True):
-            ui.card_header("Filtered Data Table")
+        
 
-            @render.data_frame
-            def table():
-                return render.DataGrid(filtered_time_series_data())
 
-with ui.nav_panel('Topic analysis'):
+
+with ui.nav_panel('Trend Drivers'):
     with ui.layout_sidebar():
         with ui.sidebar(open="desktop"):
             # Create the topic selection input with "All Topics" as the first option
@@ -237,7 +279,7 @@ with ui.nav_panel('Topic analysis'):
                 "topicSelect_2", 
                 "Choose Topic(s):", 
                 choices=topic_choices, 
-                multiple=True,  # Allow multiple selections
+                multiple=False,  # Allow multiple selections
                 options={"placeholder": "Select one or more topics..."}
     )
             # ui.input_action_button("add_all", "Add All Topics")
@@ -257,6 +299,66 @@ with ui.nav_panel('Topic analysis'):
                                     I'll go where Poseidon won't reach us <br>
                                     And if I gotta drop another infant from a wall <br>
                                     In an instant so we all don't die""")
+            with ui.card(height='800px'):
+                ui.card_header("Keyword Word Cloud")
+
+                @render.ui
+                def keyword_wordcloud():
+                    # Check if data is available from filtered_time_series_data()
+                    data = unfiltered_data()
+                    selected_topic = input.topicSelect_2()  # Get the topic as a single string like "1: topic1"
+                    topic_number = int(selected_topic.split(":")[0].strip()) 
+                    additional_words = {"singapore", "singaporean", "http", "gon", "na", "gt"}
+                    final_topics_overview = final_topic_overview
+                    start_date = input.date_range()[0]
+                    end_date = input.date_range()[1]
+                    start_date = start_date.strftime('%Y-%m-%d')
+                    end_date = end_date.strftime('%Y-%m-%d')
+                    
+                    def get_topic_words_set(topics_overview, topic_number, additional_words=None):
+                        pos = list(topics_overview[topics_overview['Topic'] == topic_number]['POS'].reset_index(drop=True).iloc[0])
+                        kbmmr = list(topics_overview[topics_overview['Topic'] == topic_number]['KeyBERT_MMR'].reset_index(drop=True).iloc[0])
+                        kb = list(topics_overview[topics_overview['Topic'] == topic_number]['KeyBERT'].reset_index(drop=True).iloc[0])
+                        main = list(topics_overview[topics_overview['Topic'] == topic_number]['Representation'].reset_index(drop=True).iloc[0])
+                        topic_words_set = set(pos + kbmmr + kb + main)
+                        if additional_words:
+                            topic_words_set.update(additional_words)
+                        return topic_words_set
+
+                    def remove_words(text, words_to_remove):
+                        return ' '.join([word for word in text.split() if word.lower() not in words_to_remove])
+
+                    def prepare_document(topic_number, start_date, end_date, topics_overview, additional_words):
+                        topic_comments = df[df["new_topic_number"] == topic_number].reset_index(drop=True)
+                        filtered_comments = topic_comments[(topic_comments['timestamp'] >= start_date) & (topic_comments['timestamp'] < end_date)]
+                        
+                        topic_words_set = get_topic_words_set(topics_overview, topic_number, additional_words)
+                        filtered_comments['text_cleaned'] = filtered_comments['nltk_processed_text'].apply(lambda x: remove_words(x, topic_words_set))
+                        filtered_comments = filtered_comments[filtered_comments['text_cleaned'].notna()]
+                        
+                        return filtered_comments['text_cleaned']
+
+                    if data.empty or not topic_number:
+                        return ui.HTML("<p>No data or topic selected for word cloud generation.</p>")
+
+                    # Assuming `topic_number` is already defined as a single integer
+                    all_docs = []
+
+                    # Prepare the document for the single topic number
+                    docs = prepare_document(
+                        topic_number=topic_number,
+                        start_date=start_date,
+                        end_date=end_date,
+                        topics_overview=final_topics_overview,
+                        additional_words=additional_words
+                    )
+                    all_docs.extend(docs)
+
+                    # Generate and display the word cloud
+                    img_base64 = generate_keyword_wordcloud(all_docs)
+                    return ui.HTML(f'<img src="data:image/png;base64,{img_base64}" alt="Word Cloud" style="width: 100%;">')
+
+
 
 with ui.nav_panel("Post title analysis"):
     with ui.layout_sidebar():
@@ -810,21 +912,30 @@ def filtered_by_post_data():
         print(f"Error in filtered_by_post_data: {e}")
         return pd.DataFrame() 
 
+def unfiltered_data():
+    return df
+
 # @reactive.Effect
 # @reactive.event(input.add_all)  # Trigger when "Add All Topics" button is clicked
 # def add_all_topics():
-#     # Set each topic individually to allow easier removal later
-#     all_topics = [topic for topic in topic_choices if topic != "All"]
-#     for topic in all_topics:
-#         # Append the topic to the current selection
-#         current_selection = input.topicSelect() or []
-#         if topic not in current_selection:
-#             ui.update_selectize("topicSelect", selected=current_selection + [topic])
+#     # Set the `topicSelect` input to all available topics
+#     all_topics = [topic for topic in topic_choices]
+#     ui.update_selectize("topicSelect", selected=all_topics)
+
+@reactive.Effect
+@reactive.event(input.reset_date)  # Trigger when "Reset Date Range" button is clicked
+def reset_date_range():
+    # Reset the `date_range` input to the initial values
+    ui.update_date_range(
+        "date_range", 
+        start=str(earliest_date.date()),  # Reset to initial start date
+        end=str(latest_date.date())       # Reset to initial end date
+    )
 
 @reactive.Effect
 @reactive.event(input.reset)  # Trigger when "Reset Selection" button is clicked
 def reset_topics():
-    # Clear the topicSelect input selection
+    # Clear the `topicSelect` input selection
     ui.update_selectize("topicSelect", selected=[])
 
 @reactive.Effect

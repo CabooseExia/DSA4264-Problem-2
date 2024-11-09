@@ -4,13 +4,18 @@ import torch
 from IPython.display import display, HTML
 from lime.lime_text import LimeTextExplainer
 from captum.attr import IntegratedGradients
+from wordcloud import WordCloud
+from collections import Counter
+from keybert import KeyBERT
+import matplotlib.pyplot as plt
 
 import pandas as pd
 
 app_dir = Path(__file__).parent
-# hate = pd.read_parquet(app_dir / ".." / "data" / "sampled_hate_cleaned_w_topics.parquet")
-# post = pd.read_parquet(app_dir / ".." / "data" / "post.parquet")
+
 df = pd.read_parquet(app_dir / ".." / "data" / "glenn_and_sy.parquet")
+final_topic_overview = pd.read_parquet(app_dir / ".." / "data" / "final_topics_overview.parquet")
+
 explainer = LimeTextExplainer(class_names=["Non-trigger", "Trigger"])
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -136,6 +141,26 @@ def generate_integrated_gradients_html(text, num_features=10, threshold=0.05):
     
     return html_text
 
+def generate_keyword_wordcloud(docs, ngram_range=(1, 2), top_n=10, diversity=0.5):
+    kw_model = KeyBERT()
+
+    # Extract keywords
+    keywords = kw_model.extract_keywords(docs=list(docs), keyphrase_ngram_range=ngram_range, top_n=top_n, diversity=diversity)
+    
+    # Flatten all keyword phrases across lists
+    all_phrases = [phrase for sublist in keywords for phrase, _ in sublist]
+
+    # Count the frequency of each phrase
+    phrase_counts = Counter(all_phrases)
+
+    # Get the top 20 most frequent phrases
+    top_20_phrases = phrase_counts.most_common(20)
+    top_20_phrase_counts = dict(top_20_phrases)
+
+    # Create word cloud based on top 20 phrases
+    wordcloud = WordCloud(width=800, height=400, background_color='white').generate_from_frequencies(top_20_phrase_counts)
+
+    return wordcloud
 
 
 
