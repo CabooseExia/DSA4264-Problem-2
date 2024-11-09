@@ -2,7 +2,7 @@ import faicons as fa
 import plotly.express as px
 
 # Load data and compute static values
-from shared import app_dir, df, free_churro, load_model, lime_predict
+from shared import app_dir, df, free_churro, load_model, lime_predict, generate_lime_html
 from shinywidgets import render_plotly
 
 from shiny import reactive, render
@@ -17,6 +17,8 @@ import numpy as np
 from transformers import BertForSequenceClassification, BertTokenizer
 import torch
 from lime.lime_text import LimeTextExplainer
+import plotly.graph_objects as go
+from IPython.display import display, HTML
 
 topic_to_words = df.drop_duplicates(subset=['topic_number']).set_index('topic_number')['topic_words'].to_dict()
 topic_to_words = df[df['topic_number'] != -1].drop_duplicates(subset=['topic_number']).set_index('topic_number')['topic_words'].to_dict()
@@ -366,14 +368,74 @@ with ui.nav_panel("Post title analysis"):
                     
                     
 
-with ui.nav_panel("XAI analysis"):
+with ui.nav_panel("Trigger analysis"):
     with ui.layout_sidebar():
         with ui.sidebar(open="desktop"):
-            # Text input and submit button
+            # Text input and submit/reset buttons
             ui.input_text("input_text", "Enter text:")
-            ui.input_action_button("reset_text", "Reset")  # Reset button
+            ui.input_action_button("submit_text", "Submit")  # Submit button
+            ui.input_action_button("reset_text", "Reset")    # Reset button
 
-        with ui.layout_column_wrap():
+        with ui.layout_columns(col_widths=[4, 8]):
+            with ui.card():
+                ui.card_header("Prediction Probabilities")
+
+                # Function to predict probabilities for a given input text
+                @reactive.Calc
+                def prediction_probabilities():
+                    entered_text = input.input_text()
+
+                    # Check if there is text to analyze
+                    if not entered_text:
+                        return None
+
+                    # Use LIME's prediction function to get probabilities
+                    probs = lime_predict([entered_text], model, tokenizer)
+                    
+                    # Get probabilities for "Non-trigger" and "Trigger" classes
+                    non_trigger_prob = probs[0][0]  # Assumes 0th index is "Non-trigger"
+                    trigger_prob = probs[0][1]      # Assumes 1st index is "Trigger"
+                    
+                    return {"Non-trigger": non_trigger_prob, "Trigger": trigger_prob}
+
+                # Render the prediction probabilities as a Plotly bar chart
+                @render_plotly
+                def display_prediction_probabilities():
+                    probs = prediction_probabilities()
+
+                    if probs is None:
+                        return go.Figure()  # Return an empty figure if no text is entered
+
+                    # Create the Plotly bar plot
+                    fig = go.Figure(
+                        data=[
+                            go.Bar(
+                                x=[probs["Non-trigger"], probs["Trigger"]],
+                                y=["Non-trigger", "Trigger"],
+                                orientation='h',
+                                marker_color=["#add8e6", "#ffa07a"],  # Colors for each class
+                                text=[f"{probs['Non-trigger']:.2f}", f"{probs['Trigger']:.2f}"],  # Display values
+                                textposition="auto",  # Automatically place text inside or outside the bar
+                                textfont=dict(size=16, color="black", family="Arial, bold"),  # Enlarge and bold the text inside bars
+                                hovertemplate='%{text}<extra></extra>'  # Show text on hover
+                            )
+                        ]
+                    )
+
+                    # Update layout for readability
+                    fig.update_layout(
+                        title="Prediction Probabilities",
+                        xaxis_title="Probability",
+                        yaxis=dict(
+                            autorange="reversed",  # Display "Non-trigger" on top
+                            tickfont=dict(size=18, family="Arial, bold")  # Make y-axis labels larger and bold
+                        ),
+                        height=200,
+                        margin=dict(l=80, r=20, t=30, b=20),  # Increase left margin for larger y-axis labels
+                    )
+
+                    return fig
+
             with ui.card():
                 ui.card_header("Predicted Topic with Explanation")
 
@@ -384,36 +446,77 @@ with ui.nav_panel("XAI analysis"):
 
                     # Check if there is text to analyze
                     if not entered_text:
-                        return "Please enter some text and submit."
+                        return None
 
-                    # Generate explanation with LIME
+                    # Generate explanation with LIME, passing model and tokenizer using a lambda
                     exp = explainer.explain_instance(
-                            entered_text,
-                            lambda text: lime_predict(text, model, tokenizer),  # Lambda to add model and tokenizer
-                            num_features=10  # Number of words to highlight
-                        )
+                        entered_text,
+                        lambda text: lime_predict(text, model, tokenizer),
+                        num_features=10  # Number of words to highlight
+                    )
 
                     # Extract the explanation as a list of words and scores
                     explanation_list = exp.as_list()  # List of words with their contribution scores
                     return explanation_list
 
-                # Display the LIME explanation
-                @render.ui
+                # Render the LIME explanation as a Plotly bar plot
+                @render_plotly
                 def display_lime_explanation():
                     explanation_list = lime_explanation()
 
-                    # Check if explanation is a string (indicating no text was entered)
-                    if isinstance(explanation_list, str):
-                        return ui.HTML(f"<p>{explanation_list}</p>")
+                    if explanation_list is None:
+                        return go.Figure()  # Return an empty figure if no text is entered
 
-                    # Format explanation as a HTML list with words and their scores
-                    explanation_html = "<ul>"
-                    for word, score in explanation_list:
-                        explanation_html += f"<li>{word}: {score:.4f}</li>"
-                    explanation_html += "</ul>"
+                    # Unpack words and scores
+                    words, scores = zip(*explanation_list)  # Separate words and their scores
 
-                    return ui.HTML(explanation_html)
+                    # Define colors based on contribution direction
+                    colors = ["#ffa07a" if score > 0 else "#add8e6" for score in scores]
 
+                    # Create the Plotly bar plot
+                    fig = go.Figure(
+                        data=[
+                            go.Bar(
+                                x=scores,
+                                y=words,
+                                orientation='h',
+                                marker_color=colors,
+                                text=[f"<b>{word}</b>: {score:.2f}" for word, score in zip(words, scores)],  # Bold words and show score
+                                textposition="auto",  # Automatically place text on top of each bar
+                                textfont=dict(size=16, color="black", family="Arial, bold"),  # Increase font size, set color, and bold
+                                hovertemplate='%{text}<extra></extra>'  # Show text on hover
+                            )
+                        ]
+                    )
+
+                    # Update layout for readability
+                    fig.update_layout(
+                        title="LIME Explanation for Input Text",
+                        xaxis_title="Contribution Score",
+                        yaxis_title="",
+                        yaxis=dict(autorange="reversed", showticklabels=False),  # Remove y-axis labels
+                        height=400,
+                        margin=dict(l=60, r=20, t=60, b=20),
+                    )
+
+                    return fig
+                
+
+        with ui.layout_columns():
+            with ui.card():
+                ui.card_header("Text Attribution Explanation")
+
+                @render.ui
+                def display_lime_html_text():
+                    text = input.input_text()
+
+                    if text is None or not text:
+                        return ui.HTML("<p>Enter text to see the explanation.</p>")
+                    # Generate HTML text with token colors and styles based on LIME
+                    html_content = generate_lime_html(text)
+                    
+                    # Display the HTML content within the Shiny Express UI
+                    return ui.HTML(html_content)
 
 # # --------------------------------------------------------
 # # Reactive calculations and effects
@@ -511,6 +614,12 @@ def reset_topics():
 def reset_topics():
     # Clear the topicSelect input selection
     ui.update_selectize("topicSelect_2", selected=[])
+
+@reactive.Calc
+@reactive.event(input.submit_text)  # Trigger only on submit button click
+def submitted_text():
+    return input.input_text()  # Capture and return the current value of input_text
+
 
 @reactive.Effect
 @reactive.event(input.reset_text)  # Trigger when "Reset" button is clicked

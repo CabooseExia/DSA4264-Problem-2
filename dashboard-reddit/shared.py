@@ -1,6 +1,8 @@
 from pathlib import Path
 from transformers import BertForSequenceClassification, BertTokenizer
 import torch
+from IPython.display import display, HTML
+from lime.lime_text import LimeTextExplainer
 
 import pandas as pd
 
@@ -8,11 +10,14 @@ app_dir = Path(__file__).parent
 # hate = pd.read_parquet(app_dir / ".." / "data" / "sampled_hate_cleaned_w_topics.parquet")
 # post = pd.read_parquet(app_dir / ".." / "data" / "post.parquet")
 df = pd.read_parquet(app_dir / ".." / "data" / "glenn_and_sy.parquet")
+explainer = LimeTextExplainer(class_names=["Non-trigger", "Trigger"])
 
 def load_model():
-    model_dir = app_dir / 'fine_tuned_bert_model_3'
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_dir = model_dir = app_dir / 'fine_tuned_bert_model_3'
     model = BertForSequenceClassification.from_pretrained(str(model_dir), output_attentions=True)
     tokenizer = BertTokenizer.from_pretrained(str(model_dir))
+    model.to(device)
     model.eval()
     return model, tokenizer
 
@@ -23,6 +28,33 @@ def lime_predict(texts, model, tokenizer):
         outputs = model(**inputs)
     probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
     return probs.cpu().numpy()
+
+def generate_lime_html(text, num_features=10, threshold=0.05):
+    # Generate LIME explanation for the given text
+    model, tokenizer = load_model()
+    explanation = explainer.explain_instance(
+        text,
+        lambda x: lime_predict(x, model, tokenizer),  # Wrap model prediction for LIME
+        num_features=num_features
+    )
+
+    # Create a dictionary for easy lookup of scores by word
+    explanation_dict = dict(explanation.as_list())
+
+    # Tokenize the original text
+    tokens = text.split()  # Simple split; adjust if necessary for more complex tokenization
+    
+    # Generate HTML for tokens in original order with LIME-based coloring
+    html_text = "<div style='font-family: Arial, sans-serif; font-size: 16px;'>"
+    for token in tokens:
+        score = explanation_dict.get(token, 0)  # Default score of 0 if token not in explanation
+        color = f"rgba(255, 0, 0, {min(1, abs(score) * 3)})" if score > 0 else f"rgba(0, 0, 255, {min(1, abs(score) * 3)})"
+        style = f"background-color: {color}; padding: 2px 5px; margin: 2px; display: inline-block; border-radius: 4px; color: black;"
+        html_text += f"<span style='{style}'>{token}</span> "
+    html_text += "</div>"
+    return html_text
+
+
 
 
 free_churro = """So I stopped at a Jack in the Box on the way here, and the girl behind the counter said, “Hiya! Are you having an awesome day?” Not, “How are you doing today?” No. “Are you having an awesome day?” Which is pretty… shitty, because it puts the onus on me to disagree with her, like if I’m not having an “awesome day,” suddenly I’m the negative one.
