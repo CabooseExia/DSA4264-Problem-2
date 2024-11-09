@@ -2,7 +2,7 @@ import faicons as fa
 import plotly.express as px
 
 # Load data and compute static values
-from shared import app_dir, df, free_churro
+from shared import app_dir, df, free_churro, load_model, lime_predict
 from shinywidgets import render_plotly
 
 from shiny import reactive, render
@@ -14,6 +14,9 @@ from io import BytesIO
 import base64
 import os
 import numpy as np
+from transformers import BertForSequenceClassification, BertTokenizer
+import torch
+from lime.lime_text import LimeTextExplainer
 
 topic_to_words = df.drop_duplicates(subset=['topic_number']).set_index('topic_number')['topic_words'].to_dict()
 topic_to_words = df[df['topic_number'] != -1].drop_duplicates(subset=['topic_number']).set_index('topic_number')['topic_words'].to_dict()
@@ -24,6 +27,9 @@ subreddit = df['subreddit'].unique().tolist()
 subreddit = [x for x in subreddit if str(x) != 'nan']
 # subreddit_choices = ["All"] + subreddit
 subreddit_choices = subreddit
+
+model, tokenizer = load_model()
+explainer = LimeTextExplainer(class_names=["Non-trigger", "Trigger"])
 
 ui.page_opts(title="Reddit Comment Analysis Dashboard", fillable=False)
 
@@ -243,12 +249,30 @@ with ui.nav_panel("Post title analysis"):
                 choices=subreddit_choices
             )
         with ui.layout_column_wrap(height="300px"):
-            with ui.card():
-                ui.card_header(":)")
+            with ui.card(full_screen=True, min_height="300px"):
+                ui.card_header("Top 20 Posts by Comments")
 
-                @render.text
-                def post_table():
-                    return 'MY KINGDOM IS WAITING'
+                @render.ui
+                def top_20_posts():
+                    # Filter data based on the selected subreddit
+                    selected_subreddit = input.subredditSelect()  # Assuming you have a dropdown for subreddit selection
+                    data = df[df['subreddit'] == selected_subreddit]
+
+                    # Check if there's data for the selected subreddit
+                    if data.empty:
+                        return ui.HTML("<p>No posts available for the selected subreddit.</p>")
+                    
+                    # Get top 20 posts by comment count, removing duplicate rows
+                    top_posts = data[['post_title', 'comment_count']].drop_duplicates().nlargest(20, 'comment_count')
+
+                    # Convert the top posts to an HTML list
+                    post_list_html = "<ol>"
+                    for _, row in top_posts.iterrows():
+                        post_list_html += f"<li><strong>{row['post_title']}</strong> - {row['comment_count']} comments</li>"
+                    post_list_html += "</ol>"
+
+                    # Display the top 20 posts in the card
+                    return ui.HTML(post_list_html)
             
             with ui.card():
                 ui.card_header("Post Title Word Cloud")
@@ -343,7 +367,52 @@ with ui.nav_panel("Post title analysis"):
                     
 
 with ui.nav_panel("XAI analysis"):
-    "PENELOPE'S WAITING FOR ME, so full speed ahead'."
+    with ui.layout_sidebar():
+        with ui.sidebar(open="desktop"):
+            # Text input and submit button
+            ui.input_text("input_text", "Enter text:")
+            ui.input_action_button("reset_text", "Reset")  # Reset button
+
+        with ui.layout_column_wrap():
+            with ui.card():
+                ui.card_header("Predicted Topic with Explanation")
+
+                # Function to get LIME explanation as a list of words and their contribution scores
+                @reactive.Calc
+                def lime_explanation():
+                    entered_text = input.input_text()
+
+                    # Check if there is text to analyze
+                    if not entered_text:
+                        return "Please enter some text and submit."
+
+                    # Generate explanation with LIME
+                    exp = explainer.explain_instance(
+                            entered_text,
+                            lambda text: lime_predict(text, model, tokenizer),  # Lambda to add model and tokenizer
+                            num_features=10  # Number of words to highlight
+                        )
+
+                    # Extract the explanation as a list of words and scores
+                    explanation_list = exp.as_list()  # List of words with their contribution scores
+                    return explanation_list
+
+                # Display the LIME explanation
+                @render.ui
+                def display_lime_explanation():
+                    explanation_list = lime_explanation()
+
+                    # Check if explanation is a string (indicating no text was entered)
+                    if isinstance(explanation_list, str):
+                        return ui.HTML(f"<p>{explanation_list}</p>")
+
+                    # Format explanation as a HTML list with words and their scores
+                    explanation_html = "<ul>"
+                    for word, score in explanation_list:
+                        explanation_html += f"<li>{word}: {score:.4f}</li>"
+                    explanation_html += "</ul>"
+
+                    return ui.HTML(explanation_html)
 
 
 # # --------------------------------------------------------
@@ -442,3 +511,9 @@ def reset_topics():
 def reset_topics():
     # Clear the topicSelect input selection
     ui.update_selectize("topicSelect_2", selected=[])
+
+@reactive.Effect
+@reactive.event(input.reset_text)  # Trigger when "Reset" button is clicked
+def reset_input():
+    # Clear the text input field
+    ui.update_text("input_text", value="")

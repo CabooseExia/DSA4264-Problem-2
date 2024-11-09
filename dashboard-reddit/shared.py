@@ -1,4 +1,6 @@
 from pathlib import Path
+from transformers import BertForSequenceClassification, BertTokenizer
+import torch
 
 import pandas as pd
 
@@ -7,8 +9,20 @@ app_dir = Path(__file__).parent
 # post = pd.read_parquet(app_dir / ".." / "data" / "post.parquet")
 df = pd.read_parquet(app_dir / ".." / "data" / "glenn_and_sy.parquet")
 
+def load_model():
+    model_dir = app_dir / 'fine_tuned_bert_model_3'
+    model = BertForSequenceClassification.from_pretrained(str(model_dir), output_attentions=True)
+    tokenizer = BertTokenizer.from_pretrained(str(model_dir))
+    model.eval()
+    return model, tokenizer
 
-# hate = pd.read_parquet(app_dir / "sampled_hate_cleaned_w_topics.parquet") #for showcase purposes
+def lime_predict(texts, model, tokenizer):
+    inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=128)
+    inputs = {key: value.to(model.device) for key, value in inputs.items()}
+    with torch.no_grad():
+        outputs = model(**inputs)
+    probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
+    return probs.cpu().numpy()
 
 
 free_churro = """So I stopped at a Jack in the Box on the way here, and the girl behind the counter said, “Hiya! Are you having an awesome day?” Not, “How are you doing today?” No. “Are you having an awesome day?” Which is pretty… shitty, because it puts the onus on me to disagree with her, like if I’m not having an “awesome day,” suddenly I’m the negative one.
