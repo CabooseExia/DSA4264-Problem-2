@@ -2,7 +2,7 @@ import faicons as fa
 import plotly.express as px
 
 # Load data and compute static values
-from shared import app_dir, df, free_churro, load_model, lime_predict, generate_lime_html
+from shared import app_dir, df, free_churro, load_model, lime_predict, generate_lime_html, compute_attributions, generate_integrated_gradients_html
 from shinywidgets import render_plotly
 
 from shiny import reactive, render
@@ -19,6 +19,7 @@ import torch
 from lime.lime_text import LimeTextExplainer
 import plotly.graph_objects as go
 from IPython.display import display, HTML
+from captum.attr import IntegratedGradients
 
 topic_to_words = df.drop_duplicates(subset=['topic_number']).set_index('topic_number')['topic_words'].to_dict()
 topic_to_words = df[df['topic_number'] != -1].drop_duplicates(subset=['topic_number']).set_index('topic_number')['topic_words'].to_dict()
@@ -32,6 +33,7 @@ subreddit_choices = subreddit
 
 model, tokenizer = load_model()
 explainer = LimeTextExplainer(class_names=["Non-trigger", "Trigger"])
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 ui.page_opts(title="Reddit Comment Analysis Dashboard", fillable=False)
 
@@ -237,9 +239,16 @@ with ui.nav_panel('Topic analysis'):
             with ui.card():
                 ui.card_header("Keyword Frequency")
 
-                @render.text
+                @render.ui
                 def keyword_analysis():
-                    return free_churro
+                    return ui.HTML("""And deep down I know this well <br>
+                                    I lost my best friend, I lost my mentor, my mom <br>
+                                    Five hundred men gone, this can't go on <br>
+                                    I must get to see Penelope and Telemachus <br>
+                                    So if we must sail through dangerous oceans and beaches <br>
+                                    I'll go where Poseidon won't reach us <br>
+                                    And if I gotta drop another infant from a wall <br>
+                                    In an instant so we all don't die""")
 
 with ui.nav_panel("Post title analysis"):
     with ui.layout_sidebar():
@@ -371,9 +380,14 @@ with ui.nav_panel("Post title analysis"):
 with ui.nav_panel("Trigger analysis"):
     with ui.layout_sidebar():
         with ui.sidebar(open="desktop"):
+            ui.input_select(
+                "card_selection",
+                "Select model to display:",
+                choices=["Lime", "Integrated Gradients"]
+            )
             # Text input and submit/reset buttons
             ui.input_text("input_text", "Enter text:")
-            ui.input_action_button("submit_text", "Submit")  # Submit button
+            # ui.input_action_button("submit_text", "Submit")  # Submit button
             ui.input_action_button("reset_text", "Reset")    # Reset button
 
         with ui.layout_columns(col_widths=[4, 8]):
@@ -397,44 +411,119 @@ with ui.nav_panel("Trigger analysis"):
                     trigger_prob = probs[0][1]      # Assumes 1st index is "Trigger"
                     
                     return {"Non-trigger": non_trigger_prob, "Trigger": trigger_prob}
+                
+                @reactive.Calc
+                def integrated_gradients_probabilities():
+                    # Get input text from the app input
+                    input_text = input.input_text()
+                    
+                    # Tokenize the input text
+                    inputs = tokenizer(input_text, return_tensors="pt", padding=True, truncation=True, max_length=128).to(device)
+                    input_ids = inputs["input_ids"]
+                    attention_mask = inputs["attention_mask"]
+                    
+                    # Generate embeddings from input_ids using BERT’s embedding layer
+                    embeddings = model.bert.embeddings(input_ids).detach().requires_grad_(True)
+                    
+                    # Define a forward function for Integrated Gradients
+                    def forward_func(embeddings, attention_mask):
+                        outputs = model(inputs_embeds=embeddings, attention_mask=attention_mask)
+                        logits = outputs.logits
+                        return torch.softmax(logits, dim=-1)
+                    
+                    # Initialize Integrated Gradients
+                    integrated_gradients = IntegratedGradients(forward_func)
+                    
+                    # Compute attributions with Integrated Gradients
+                    attributions = integrated_gradients.attribute(
+                        embeddings,
+                        baselines=torch.zeros_like(embeddings).to(device),  # Baseline as zero tensor
+                        additional_forward_args=(attention_mask,),
+                        target=1,  # Assuming class index 1 corresponds to "Trigger"
+                        n_steps=50
+                    )
+                    
+                    # Compute probabilities for each class
+                    outputs = model(inputs_embeds=embeddings, attention_mask=attention_mask)
+                    probabilities = torch.softmax(outputs.logits, dim=-1).squeeze().tolist()  # Convert to a list for readability
+
+                    return {"Non-trigger": probabilities[0], "Trigger": probabilities[1]}
 
                 # Render the prediction probabilities as a Plotly bar chart
                 @render_plotly
                 def display_prediction_probabilities():
-                    probs = prediction_probabilities()
+                    xai = input.card_selection()
+                    if xai == "Lime":
+                        probs = prediction_probabilities()
 
-                    if probs is None:
-                        return go.Figure()  # Return an empty figure if no text is entered
+                        if probs is None:
+                            return go.Figure()  # Return an empty figure if no text is entered
 
-                    # Create the Plotly bar plot
-                    fig = go.Figure(
-                        data=[
-                            go.Bar(
-                                x=[probs["Non-trigger"], probs["Trigger"]],
-                                y=["Non-trigger", "Trigger"],
-                                orientation='h',
-                                marker_color=["#add8e6", "#ffa07a"],  # Colors for each class
-                                text=[f"{probs['Non-trigger']:.2f}", f"{probs['Trigger']:.2f}"],  # Display values
-                                textposition="auto",  # Automatically place text inside or outside the bar
-                                textfont=dict(size=16, color="black", family="Arial, bold"),  # Enlarge and bold the text inside bars
-                                hovertemplate='%{text}<extra></extra>'  # Show text on hover
-                            )
-                        ]
-                    )
+                        # Create the Plotly bar plot
+                        fig = go.Figure(
+                            data=[
+                                go.Bar(
+                                    x=[probs["Non-trigger"], probs["Trigger"]],
+                                    y=["Non-trigger", "Trigger"],
+                                    orientation='h',
+                                    marker_color=["#add8e6", "#ffa07a"],  # Colors for each class
+                                    text=[f"{probs['Non-trigger']:.2f}", f"{probs['Trigger']:.2f}"],  # Display values
+                                    textposition="auto",  # Automatically place text inside or outside the bar
+                                    textfont=dict(size=16, color="black", family="Arial, bold"),  # Enlarge and bold the text inside bars
+                                    hovertemplate='%{text}<extra></extra>'  # Show text on hover
+                                )
+                            ]
+                        )
 
-                    # Update layout for readability
-                    fig.update_layout(
-                        title="Prediction Probabilities",
-                        xaxis_title="Probability",
-                        yaxis=dict(
-                            autorange="reversed",  # Display "Non-trigger" on top
-                            tickfont=dict(size=18, family="Arial, bold")  # Make y-axis labels larger and bold
-                        ),
-                        height=200,
-                        margin=dict(l=80, r=20, t=30, b=20),  # Increase left margin for larger y-axis labels
-                    )
+                        # Update layout for readability
+                        fig.update_layout(
+                            title="Prediction Probabilities",
+                            xaxis_title="Probability",
+                            yaxis=dict(
+                                autorange="reversed",  # Display "Non-trigger" on top
+                                tickfont=dict(size=18, family="Arial, bold")  # Make y-axis labels larger and bold
+                            ),
+                            height=200,
+                            margin=dict(l=80, r=20, t=30, b=20),  # Increase left margin for larger y-axis labels
+                        )
 
-                    return fig
+                        return fig
+                    else:
+                        probs = integrated_gradients_probabilities()
+
+                        if probs is None:
+                            return go.Figure()  # Return an empty figure if no text is entered
+
+                        # Create the Plotly bar plot for Integrated Gradients
+                        fig = go.Figure(
+                            data=[
+                                go.Bar(
+                                    x=[probs["Non-trigger"], probs["Trigger"]],
+                                    y=["Non-trigger", "Trigger"],
+                                    orientation='h',
+                                    marker_color=["#98FB98", "#FF6347"],  # Different colors for Integrated Gradients
+                                    text=[f"{probs['Non-trigger']:.2f}", f"{probs['Trigger']:.2f}"],  # Display values
+                                    textposition="auto",
+                                    textfont=dict(size=16, color="black", family="Arial, bold"),
+                                    hovertemplate='%{text}<extra></extra>'
+                                )
+                            ]
+                        )
+
+                        # Update layout for readability
+                        fig.update_layout(
+                            title="Prediction Probabilities (Integrated Gradients)",
+                            xaxis_title="Probability",
+                            yaxis=dict(
+                                autorange="reversed",
+                                tickfont=dict(size=18, family="Arial, bold")
+                            ),
+                            height=200,
+                            margin=dict(l=80, r=20, t=30, b=20),
+                        )
+
+                        return fig
+                    
 
             with ui.card():
                 ui.card_header("Predicted Topic with Explanation")
@@ -461,45 +550,88 @@ with ui.nav_panel("Trigger analysis"):
 
                 # Render the LIME explanation as a Plotly bar plot
                 @render_plotly
-                def display_lime_explanation():
-                    explanation_list = lime_explanation()
+                def display_explanation():
+                    xai = input.card_selection()
+                    if xai == "Lime":
+                        explanation_list = lime_explanation()
 
-                    if explanation_list is None:
-                        return go.Figure()  # Return an empty figure if no text is entered
+                        if explanation_list is None:
+                            return go.Figure()  # Return an empty figure if no text is entered
 
-                    # Unpack words and scores
-                    words, scores = zip(*explanation_list)  # Separate words and their scores
+                        # Unpack words and scores
+                        words, scores = zip(*explanation_list)  # Separate words and their scores
 
-                    # Define colors based on contribution direction
-                    colors = ["#ffa07a" if score > 0 else "#add8e6" for score in scores]
+                        # Define colors based on contribution direction
+                        colors = ["#ffa07a" if score > 0 else "#add8e6" for score in scores]
 
-                    # Create the Plotly bar plot
-                    fig = go.Figure(
-                        data=[
-                            go.Bar(
-                                x=scores,
-                                y=words,
+                        # Create the Plotly bar plot
+                        fig = go.Figure(
+                            data=[
+                                go.Bar(
+                                    x=scores,
+                                    y=words,
+                                    orientation='h',
+                                    marker_color=colors,
+                                    text=[f"<b>{word}</b>: {score:.2f}" for word, score in zip(words, scores)],  # Bold words and show score
+                                    textposition="auto",  # Automatically place text on top of each bar
+                                    textfont=dict(size=16, color="black", family="Arial, bold"),  # Increase font size, set color, and bold
+                                    hovertemplate='%{text}<extra></extra>'  # Show text on hover
+                                )
+                            ]
+                        )
+
+                        # Update layout for readability
+                        fig.update_layout(
+                            title="LIME Explanation for Input Text",
+                            xaxis_title="Contribution Score",
+                            yaxis_title="",
+                            yaxis=dict(autorange="reversed", showticklabels=False),  # Remove y-axis labels
+                            height=400,
+                            margin=dict(l=60, r=20, t=60, b=20),
+                        )
+
+                        return fig
+                    else:
+                        text = input.input_text()  # Retrieve text from input
+
+                        if text:
+                            tokens, scores = compute_attributions(text)
+                            
+                            # Prepare data and sort by absolute attribution values
+                            df = pd.DataFrame({"Token": tokens, "Attribution Score": scores})
+                            df = df.reindex(df["Attribution Score"].abs().sort_values(ascending=False).index).head(10)
+                            df["Token + Score"] = df["Token"] + " (" + df["Attribution Score"].round(2).astype(str) + ")"
+                            df = df[::-1]  # Reverse for descending y-axis order
+
+                            # Set colors based on score intensity and sign
+                            colors = [f'rgba(255, 0, 0, {abs(score) / max(df["Attribution Score"].abs())})' if score > 0 else 
+                                    f'rgba(0, 128, 0, {abs(score) / max(df["Attribution Score"].abs())})' for score in df["Attribution Score"]]
+
+                            # Create the bar chart
+                            fig = go.Figure(go.Bar(
+                                x=df["Attribution Score"],
+                                y=df["Token + Score"],
                                 orientation='h',
-                                marker_color=colors,
-                                text=[f"<b>{word}</b>: {score:.2f}" for word, score in zip(words, scores)],  # Bold words and show score
-                                textposition="auto",  # Automatically place text on top of each bar
-                                textfont=dict(size=16, color="black", family="Arial, bold"),  # Increase font size, set color, and bold
-                                hovertemplate='%{text}<extra></extra>'  # Show text on hover
+                                marker=dict(color=colors),
+                                text=["<b>" + label + "</b>" for label in df["Token + Score"]],
+                                textposition="auto",
+                                texttemplate='%{text}'
+                            ))
+
+                            # Customize layout
+                            fig.update_layout(
+                                title="Top 10 Token Attributions",
+                                xaxis_title="Attribution Score",
+                                yaxis_title="",
+                                yaxis=dict(categoryorder="array"),
+                                font=dict(family="Arial", size=12, color="black")
                             )
-                        ]
-                    )
+                            
+                            return fig
 
-                    # Update layout for readability
-                    fig.update_layout(
-                        title="LIME Explanation for Input Text",
-                        xaxis_title="Contribution Score",
-                        yaxis_title="",
-                        yaxis=dict(autorange="reversed", showticklabels=False),  # Remove y-axis labels
-                        height=400,
-                        margin=dict(l=60, r=20, t=60, b=20),
-                    )
+                        # Return an empty figure if no text is entered
+                        return go.Figure()
 
-                    return fig
                 
 
         with ui.layout_columns():
@@ -508,13 +640,20 @@ with ui.nav_panel("Trigger analysis"):
 
                 @render.ui
                 def display_lime_html_text():
+                    xai = input.card_selection() 
                     text = input.input_text()
-
-                    if text is None or not text:
-                        return ui.HTML("<p>Enter text to see the explanation.</p>")
-                    # Generate HTML text with token colors and styles based on LIME
-                    html_content = generate_lime_html(text)
-                    
+                    if xai == "Lime":
+                        if text is None or not text:
+                            return ui.HTML("<p>Enter text to see the explanation.</p>")
+                        # Generate HTML text with token colors and styles based on LIME
+                        html_content = generate_lime_html(text)
+                        
+                        # Display the HTML content within the Shiny Express UI
+                        return ui.HTML(html_content)
+                    else:
+                        # Generate HTML with token colors based on Integrated Gradients
+                        html_content = generate_integrated_gradients_html(text)
+                        
                     # Display the HTML content within the Shiny Express UI
                     return ui.HTML(html_content)
 

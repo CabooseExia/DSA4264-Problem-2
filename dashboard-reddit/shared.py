@@ -3,6 +3,7 @@ from transformers import BertForSequenceClassification, BertTokenizer
 import torch
 from IPython.display import display, HTML
 from lime.lime_text import LimeTextExplainer
+from captum.attr import IntegratedGradients
 
 import pandas as pd
 
@@ -12,8 +13,9 @@ app_dir = Path(__file__).parent
 df = pd.read_parquet(app_dir / ".." / "data" / "glenn_and_sy.parquet")
 explainer = LimeTextExplainer(class_names=["Non-trigger", "Trigger"])
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 def load_model():
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_dir = model_dir = app_dir / 'fine_tuned_bert_model_3'
     model = BertForSequenceClassification.from_pretrained(str(model_dir), output_attentions=True)
     tokenizer = BertTokenizer.from_pretrained(str(model_dir))
@@ -53,6 +55,82 @@ def generate_lime_html(text, num_features=10, threshold=0.05):
         html_text += f"<span style='{style}'>{token}</span> "
     html_text += "</div>"
     return html_text
+
+def compute_attributions(text): #for integrated gradients
+    model, tokenizer = load_model()
+    # Tokenize and get embeddings
+    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=128).to(device)
+    input_ids = inputs["input_ids"]
+    attention_mask = inputs["attention_mask"]
+    embeddings = model.bert.embeddings(input_ids.to(device)).detach().requires_grad_(True)
+
+    # Integrated Gradients setup
+    ig = IntegratedGradients(lambda embeds: torch.softmax(model(inputs_embeds=embeds, attention_mask=attention_mask).logits, dim=-1))
+    
+    # Compute attributions
+    attributions = ig.attribute(embeddings, baselines=torch.zeros_like(embeddings).to(device), target=1, n_steps=50)
+    attributions_sum = attributions.sum(dim=-1).squeeze(0)
+
+    # Extract tokens and attributions, removing special tokens
+    tokens = tokenizer.convert_ids_to_tokens(input_ids[0])[1:-1]
+    attributions = attributions_sum[1:-1].cpu().detach().numpy()
+    
+    return tokens, attributions
+
+def generate_integrated_gradients_html(text, num_features=10, threshold=0.05):
+    # Load model and tokenizer
+    model, tokenizer = load_model()
+    
+    # Tokenize and get embeddings
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=128).to(device)
+    input_ids = inputs["input_ids"]
+    attention_mask = inputs["attention_mask"]
+    
+    # Generate embeddings with BERT’s embedding layer
+    embeddings = model.bert.embeddings(input_ids).detach().requires_grad_(True)
+    
+    # Define the forward function for Integrated Gradients
+    def forward_func(embeddings, attention_mask):
+        outputs = model(inputs_embeds=embeddings, attention_mask=attention_mask)
+        logits = outputs.logits
+        return torch.softmax(logits, dim=-1)
+    
+    # Initialize Integrated Gradients
+    ig = IntegratedGradients(forward_func)
+    
+    # Compute attributions with Integrated Gradients
+    attributions = ig.attribute(
+        embeddings,
+        baselines=torch.zeros_like(embeddings).to(device),  # Baseline as zero tensor
+        additional_forward_args=(attention_mask,),
+        target=1,  # Assuming class index 1 corresponds to "Trigger"
+        n_steps=50
+    )
+    
+    # Sum attributions across embedding dimensions
+    attributions_sum = attributions.sum(dim=-1).squeeze(0)
+    
+    # Extract tokens and attributions, removing special tokens
+    tokens = tokenizer.convert_ids_to_tokens(input_ids[0])[1:-1]  # Remove [CLS] and [SEP] tokens
+    attributions_scores = attributions_sum[1:-1].cpu().detach().numpy()
+
+    # Normalize attribution scores for color intensity
+    max_score = max(abs(attributions_scores).max(), threshold)  # Prevent division by zero
+    
+    # Generate HTML with color-coded tokens based on attribution scores
+    html_text = "<div style='font-family: Arial, sans-serif; font-size: 16px;'>"
+    for token, score in zip(tokens, attributions_scores):
+        # Determine color intensity based on normalized score
+        intensity = abs(score) / max_score
+        color = f'rgba(255, 0, 0, {intensity})' if score > 0 else f'rgba(0, 128, 0, {intensity})'
+        style = f"background-color: {color}; padding: 2px 5px; margin: 2px; display: inline-block; border-radius: 4px; color: black;"
+        html_text += f"<span style='{style}'>{token}</span> "
+    html_text += "</div>"
+    
+    return html_text
+
+
 
 
 
