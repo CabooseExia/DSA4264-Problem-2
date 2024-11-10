@@ -159,7 +159,7 @@ with ui.nav_panel('Time series analysis'):
 
 
             with ui.value_box(showcase=ICONS["hashtag"]):
-                ""
+                "Percentage change"
 
                 @render.text
                 def selected_topic():
@@ -457,6 +457,8 @@ with ui.nav_panel("Subreddit Post analysis"):
                     # Get the selected subreddit from the dropdown
                     selected_subreddit = input.subredditSelect()  # Assuming you have a dropdown for subreddit selection
                     data = filtered_by_post_data()  # Assuming this function returns a DataFrame
+
+                    data = data[~data['post_title'].str.startswith('/r/singapore random discussion and small questions thread for', na=False)]
                     
                     # Filter data based on the selected subreddit
                     if selected_subreddit == "All":
@@ -486,7 +488,8 @@ with ui.nav_panel("Subreddit Post analysis"):
                 @render.ui
                 def top_upvoted_posts():
                     # Filter the data to get unique posts by title and get the top 20 by vote_score
-                    unique_posts = df[['post_title', 'vote_score', 'timestamp']].drop_duplicates(subset='post_title')
+                    data = filtered_by_post_data()
+                    unique_posts = data[['post_title', 'vote_score', 'timestamp']].drop_duplicates(subset='post_title')
                     top_posts = unique_posts.nlargest(20, 'vote_score')
 
                     # Check if there's data available
@@ -785,22 +788,11 @@ with ui.nav_panel("User analysis by subreddit"):
                     # Step 3: Set 'post_timestamp' as the index to enable resampling
                     user_data.set_index('post_timestamp', inplace=True)
 
-                    # Step 4: Resample data monthly, counting total comments and hate comments
-                    monthly_comment_counts = user_data.resample('M').size()  # Total comments per month
+                    # Step 4: Resample data monthly, counting only hate comments
                     monthly_hate_counts = user_data[user_data['BERT_2_hate'] == True].resample('M').size()  # Hate comments per month
 
                     # Step 5: Create the interactive plot with Plotly
                     fig = go.Figure()
-
-                    # Plot total comments
-                    fig.add_trace(go.Scatter(
-                        x=monthly_comment_counts.index,
-                        y=monthly_comment_counts.values,
-                        mode='lines+markers',
-                        name='Total Comments',
-                        line=dict(color='blue'),
-                        marker=dict(size=6)
-                    ))
 
                     # Plot hate comments
                     fig.add_trace(go.Scatter(
@@ -814,17 +806,15 @@ with ui.nav_panel("User analysis by subreddit"):
 
                     # Update layout for better readability
                     fig.update_layout(
-                        title=f"Monthly Comment Activity for {username}",
+                        title=f"Monthly Hate Comment Activity for {username}",
                         xaxis_title="Month",
-                        yaxis_title="Number of Comments",
+                        yaxis_title="Number of Hate Comments",
                         hovermode="x unified",  # Shows all hover data for a specific x-axis value
                         template="plotly_white",
+                        showlegend=True
                     )
 
                     return fig
-
-                
-
 
 with ui.nav_panel("Trigger analysis"):
     with ui.layout_sidebar():
@@ -1222,6 +1212,7 @@ def filtered_by_post_data_2():
     #remove deleted users
     top_hate_users = top_hate_users[top_hate_users['username'] != '[deleted]']
     top_hate_users = top_hate_users[top_hate_users['username'] != 'sneakpeek_bot']
+    # top_hate_users = top_hate_users[top_hate_users['username'] != 'AutoModerator']
 
     # Display the result
     return top_hate_users
