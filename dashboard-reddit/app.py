@@ -32,6 +32,7 @@ topic_to_words = df.drop_duplicates(subset=['topic_number']).set_index('topic_nu
 topic_to_words = df[df['topic_number'] != -1].drop_duplicates(subset=['topic_number']).set_index('topic_number')['topic_words'].to_dict()
 # topic_choices = ["All"] + [f"{topic}: {topic_to_words[topic]}" for topic in sorted(topic_to_words.keys(), key=int)]
 topic_choices = [f"{topic}: {topic_to_words[topic]}" for topic in sorted(topic_to_words.keys())]
+topic_choices_2 = ["None"] + [f"{topic}: {topic_to_words[topic]}" for topic in sorted(topic_to_words.keys(), key=int)]
 
 subreddit = df['subreddit'].unique().tolist()
 subreddit = [x for x in subreddit if str(x) != 'nan']
@@ -274,14 +275,21 @@ with ui.nav_panel('Time series analysis'):
 with ui.nav_panel('Trend Drivers'):
     with ui.layout_sidebar():
         with ui.sidebar(open="desktop"):
+            ui.input_date_range(
+                "date_range_2", 
+                "Select Date Range:", 
+                start=str(earliest_date.date()),  # Convert to string for display
+                end=str(latest_date.date())       # Convert to string for display
+            )
             # Create the topic selection input with "All Topics" as the first option
             ui.input_selectize(
                 "topicSelect_2", 
                 "Choose Topic(s):", 
-                choices=topic_choices, 
-                multiple=False,  # Allow multiple selections
+                choices=topic_choices_2, 
+                selected=None,  # Ensures no default selection
+                multiple=False,  # Allow multiple selections if desired
                 options={"placeholder": "Select one or more topics..."}
-    )
+            )
             # ui.input_action_button("add_all", "Add All Topics")
             ui.input_action_button("reset_2", "Reset Selection")
         
@@ -307,56 +315,56 @@ with ui.nav_panel('Trend Drivers'):
                     # Check if data is available from filtered_time_series_data()
                     data = unfiltered_data()
                     selected_topic = input.topicSelect_2()  # Get the topic as a single string like "1: topic1"
-                    topic_number = int(selected_topic.split(":")[0].strip()) 
-                    additional_words = {"singapore", "singaporean", "http", "gon", "na", "gt"}
-                    final_topics_overview = final_topic_overview
-                    start_date = input.date_range()[0]
-                    end_date = input.date_range()[1]
-                    start_date = start_date.strftime('%Y-%m-%d')
-                    end_date = end_date.strftime('%Y-%m-%d')
-                    
-                    def get_topic_words_set(topics_overview, topic_number, additional_words=None):
-                        pos = list(topics_overview[topics_overview['Topic'] == topic_number]['POS'].reset_index(drop=True).iloc[0])
-                        kbmmr = list(topics_overview[topics_overview['Topic'] == topic_number]['KeyBERT_MMR'].reset_index(drop=True).iloc[0])
-                        kb = list(topics_overview[topics_overview['Topic'] == topic_number]['KeyBERT'].reset_index(drop=True).iloc[0])
-                        main = list(topics_overview[topics_overview['Topic'] == topic_number]['Representation'].reset_index(drop=True).iloc[0])
-                        topic_words_set = set(pos + kbmmr + kb + main)
-                        if additional_words:
-                            topic_words_set.update(additional_words)
-                        return topic_words_set
-
-                    def remove_words(text, words_to_remove):
-                        return ' '.join([word for word in text.split() if word.lower() not in words_to_remove])
-
-                    def prepare_document(topic_number, start_date, end_date, topics_overview, additional_words):
-                        topic_comments = df[df["new_topic_number"] == topic_number].reset_index(drop=True)
-                        filtered_comments = topic_comments[(topic_comments['timestamp'] >= start_date) & (topic_comments['timestamp'] < end_date)]
-                        
-                        topic_words_set = get_topic_words_set(topics_overview, topic_number, additional_words)
-                        filtered_comments['text_cleaned'] = filtered_comments['nltk_processed_text'].apply(lambda x: remove_words(x, topic_words_set))
-                        filtered_comments = filtered_comments[filtered_comments['text_cleaned'].notna()]
-                        
-                        return filtered_comments['text_cleaned']
-
-                    if data.empty or not topic_number:
+                    if selected_topic is None or selected_topic == "None":
                         return ui.HTML("<p>No data or topic selected for word cloud generation.</p>")
+                    else:
+                        topic_number = int(selected_topic.split(":")[0].strip()) 
+                        additional_words = {"singapore", "singaporean", "http", "gon", "na", "gt"}
+                        final_topics_overview = final_topic_overview
+                        start_date = input.date_range_2()[0]
+                        end_date = input.date_range_2()[1]
+                        start_date = start_date.strftime('%Y-%m-%d')
+                        end_date = end_date.strftime('%Y-%m-%d')
+                        
+                        def get_topic_words_set(topics_overview, topic_number, additional_words=None):
+                            pos = list(topics_overview[topics_overview['Topic'] == topic_number]['POS'].reset_index(drop=True).iloc[0])
+                            kbmmr = list(topics_overview[topics_overview['Topic'] == topic_number]['KeyBERT_MMR'].reset_index(drop=True).iloc[0])
+                            kb = list(topics_overview[topics_overview['Topic'] == topic_number]['KeyBERT'].reset_index(drop=True).iloc[0])
+                            main = list(topics_overview[topics_overview['Topic'] == topic_number]['Representation'].reset_index(drop=True).iloc[0])
+                            topic_words_set = set(pos + kbmmr + kb + main)
+                            if additional_words:
+                                topic_words_set.update(additional_words)
+                            return topic_words_set
 
-                    # Assuming `topic_number` is already defined as a single integer
-                    all_docs = []
+                        def remove_words(text, words_to_remove):
+                            return ' '.join([word for word in text.split() if word.lower() not in words_to_remove])
 
-                    # Prepare the document for the single topic number
-                    docs = prepare_document(
-                        topic_number=topic_number,
-                        start_date=start_date,
-                        end_date=end_date,
-                        topics_overview=final_topics_overview,
-                        additional_words=additional_words
-                    )
-                    all_docs.extend(docs)
+                        def prepare_document(topic_number, start_date, end_date, topics_overview, additional_words):
+                            topic_comments = df[df["new_topic_number"] == topic_number].reset_index(drop=True)
+                            filtered_comments = topic_comments[(topic_comments['timestamp'] >= start_date) & (topic_comments['timestamp'] < end_date)]
+                            
+                            topic_words_set = get_topic_words_set(topics_overview, topic_number, additional_words)
+                            filtered_comments['text_cleaned'] = filtered_comments['nltk_processed_text'].apply(lambda x: remove_words(x, topic_words_set))
+                            filtered_comments = filtered_comments[filtered_comments['text_cleaned'].notna()]
+                            
+                            return filtered_comments['text_cleaned']
 
-                    # Generate and display the word cloud
-                    img_base64 = generate_keyword_wordcloud(all_docs)
-                    return ui.HTML(f'<img src="data:image/png;base64,{img_base64}" alt="Word Cloud" style="width: 100%;">')
+                        # Assuming `topic_number` is already defined as a single integer
+                        all_docs = []
+
+                        # Prepare the document for the single topic number
+                        docs = prepare_document(
+                            topic_number=topic_number,
+                            start_date=start_date,
+                            end_date=end_date,
+                            topics_overview=final_topics_overview,
+                            additional_words=additional_words
+                        )
+                        all_docs.extend(docs)
+
+                        # Generate and display the word cloud
+                        img_base64 = generate_keyword_wordcloud(all_docs)
+                        return ui.HTML(f'<img src="data:image/png;base64,{img_base64}" alt="Word Cloud" style="width: 100%;">')
 
 
 
