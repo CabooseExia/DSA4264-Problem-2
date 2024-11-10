@@ -91,6 +91,7 @@ ICONS = {
     "hashtag": fa.icon_svg("hashtag"),
     "filter": fa.icon_svg("filter"),
     "arrow-trend-up": fa.icon_svg("arrow-trend-up"),
+    'percent': fa.icon_svg('percent'),
 }
 
 # Main content with value boxes and plots
@@ -158,12 +159,49 @@ with ui.nav_panel('Time series analysis'):
                     return trend
 
 
-            with ui.value_box(showcase=ICONS["hashtag"]):
+            with ui.value_box(showcase=ICONS["percent"]):
                 "Percentage change"
 
                 @render.text
-                def selected_topic():
-                    return "AND ITHACA'S WAITING"
+                def regression_percentage_change_display():
+                    # Get the filtered data
+                    data = filtered_time_series_data()
+
+                    # Check if data is available
+                    if data.empty:
+                        return "Choose a topic"
+
+                    # Group data by week and calculate counts
+                    weekly_counts = data.groupby(pd.Grouper(key='timestamp', freq='W')).size().reset_index(name='Count')
+                    
+                    # Ensure there is enough data to calculate the trend
+                    if weekly_counts.empty or len(weekly_counts) < 2:
+                        return "Not enough data to calculate percentage change of trend."
+
+                    # Convert timestamps to numeric values for regression
+                    weekly_counts['timestamp_numeric'] = (weekly_counts['timestamp'] - weekly_counts['timestamp'].min()).dt.days
+                    x_values = weekly_counts['timestamp_numeric']
+                    y_values = weekly_counts['Count']
+                    
+                    # Perform linear regression to get the slope and intercept
+                    slope, intercept = np.polyfit(x_values, y_values, 1)
+                    
+                    # Calculate the y-values at the start and end of the period
+                    start_x = x_values.iloc[0]
+                    end_x = x_values.iloc[-1]
+                    
+                    start_y = slope * start_x + intercept
+                    end_y = slope * end_x + intercept
+                    
+                    # Calculate the percentage change of the y-value of the regression line
+                    if start_y == 0:
+                        return "Percentage change cannot be calculated due to zero starting y-value on the regression line."
+                    
+                    percentage_change = ((end_y - start_y) / start_y) * 100
+
+                    # Return the percentage change formatted to two decimal places
+                    return f"{percentage_change:.2f}%"
+
                 
         with ui.layout_columns(height="500px"):
 
