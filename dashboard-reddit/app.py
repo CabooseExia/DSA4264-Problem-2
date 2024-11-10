@@ -159,7 +159,7 @@ with ui.nav_panel('Time series analysis'):
 
 
             with ui.value_box(showcase=ICONS["hashtag"]):
-                "Selected Topic(s)"
+                ""
 
                 @render.text
                 def selected_topic():
@@ -245,7 +245,7 @@ with ui.nav_panel('Time series analysis'):
 
             #     @render.data_frame
             #     def table():
-            #         return render.DataGrid(filtered_by_topic_data())
+            #         return render.DataGrid(filtered_time_series_data())
 
             # with ui.card(full_screen=True):
             #     with ui.card_header(class_="d-flex justify-content-between align-items-center"):
@@ -294,19 +294,26 @@ with ui.nav_panel('Trend Drivers'):
             ui.input_action_button("reset_2", "Reset Selection")
         
         with ui.layout_columns(fill=False):
-            with ui.card():
-                ui.card_header("Keyword Frequency")
+            # with ui.card():
+            #     ui.card_header("Monster")
 
-                @render.ui
-                def keyword_analysis():
-                    return ui.HTML("""And deep down I know this well <br>
-                                    I lost my best friend, I lost my mentor, my mom <br>
-                                    Five hundred men gone, this can't go on <br>
-                                    I must get to see Penelope and Telemachus <br>
-                                    So if we must sail through dangerous oceans and beaches <br>
-                                    I'll go where Poseidon won't reach us <br>
-                                    And if I gotta drop another infant from a wall <br>
-                                    In an instant so we all don't die""")
+            #     @render.ui
+            #     def keyword_analysis():
+            #         return ui.HTML("""I lost my best friend, I lost my mentor, my mom <br>
+            #                         Five hundred men gone, this can't go on <br>
+            #                         I must get to see Penelope and Telemachus <br>
+            #                         So if we must sail through dangerous oceans and beaches <br>
+            #                         I'll go where Poseidon won't reach us <br>
+            #                         And if I gotta drop another infant from a wall <br>
+            #                         In an instant so we all don't die""")
+                
+            with ui.card():
+                ui.card_header("Free Churro")
+
+                @render.text
+                def free_churro_text():
+                    return free_churro
+
             with ui.card(height='800px'):
                 ui.card_header("Keyword Word Cloud")
 
@@ -368,7 +375,7 @@ with ui.nav_panel('Trend Drivers'):
 
 
 
-with ui.nav_panel("Post title analysis"):
+with ui.nav_panel("Subreddit Post analysis"):
     with ui.layout_sidebar():
         with ui.sidebar(open="desktop"):
             # Create the topic selection input with "All Topics" as the first option
@@ -376,6 +383,12 @@ with ui.nav_panel("Post title analysis"):
                 "subredditSelect", 
                 "Choose subreddit:", 
                 choices=subreddit_choices
+            )
+            ui.input_date_range(
+                "date_range_3", 
+                "Select Date Range:", 
+                start=str(earliest_date.date()),  # Convert to string for display
+                end=str(latest_date.date())       # Convert to string for display
             )
             ui.input_text("search_keywords", "Enter keywords (comma-separated):", placeholder="e.g., elections, polling, votes")
             @reactive.Calc
@@ -385,40 +398,12 @@ with ui.nav_panel("Post title analysis"):
                 # Split the input into a list of keywords based on commas
                 keywords_to_search = [keyword.strip() for keyword in keywords_text.split(",") if keyword.strip()]
                 return keywords_to_search
+        
+        
 
         with ui.layout_column_wrap(height="300px"):
-            with ui.card(full_screen=True, min_height="300px"):
-                ui.card_header("Top 20 Posts by Comments")
-
-                @render.ui
-                def top_20_posts():
-                    # Get the selected subreddit from the dropdown
-                    selected_subreddit = input.subredditSelect()  # Assuming you have a dropdown for subreddit selection
-                    
-                    # Filter data based on the selected subreddit
-                    if selected_subreddit == "All":
-                        data = df  # Use the entire dataset when "All" is selected
-                    else:
-                        data = df[df['subreddit'] == selected_subreddit]
-
-                    # Check if there's data for the selected subreddit or all data
-                    if data.empty:
-                        return ui.HTML("<p>No posts available for the selected subreddit.</p>")
-                    
-                    # Get top 20 posts by comment count, removing duplicate rows
-                    top_posts = data[['post_title', 'comment_count']].drop_duplicates().nlargest(20, 'comment_count')
-
-                    # Convert the top posts to an HTML list
-                    post_list_html = "<ol>"
-                    for _, row in top_posts.iterrows():
-                        post_list_html += f"<li><strong>{row['post_title']}</strong> - {row['comment_count']} comments</li>"
-                    post_list_html += "</ol>"
-
-                    # Display the top 20 posts in the card
-                    return ui.HTML(post_list_html)
-            
             with ui.card():
-                ui.card_header("Post Title Word Cloud")
+                ui.card_header("Wordcloud of Posts with the most hate")
 
                 # @render.ui
                 # def wordcloud_img():
@@ -464,27 +449,61 @@ with ui.nav_panel("Post title analysis"):
                         # Display a placeholder message if the file is not found
                         return ui.HTML("<p>No word cloud available for the selected subreddit.</p>")
                     
-
-            with ui.card():
-                ui.card_header("Username Frequency")
+            with ui.card(full_screen=True, min_height="300px"):
+                ui.card_header("Top 20 Posts With Comments Given Time")
 
                 @render.ui
-                def subreddit_frequency():
-                    # Get the subreddit data from the filtered dataset
-                    subreddits = filtered_by_post_data()['username']
+                def top_20_posts():
+                    # Get the selected subreddit from the dropdown
+                    selected_subreddit = input.subredditSelect()  # Assuming you have a dropdown for subreddit selection
+                    data = filtered_by_post_data()  # Assuming this function returns a DataFrame
                     
-                    # Exclude entries with "[deleted]", "sneakpeek_bot", and "AutoModerator"
-                    subreddits = subreddits[~subreddits.isin(["[deleted]", "sneakpeek_bot", "AutoModerator"])]
+                    # Filter data based on the selected subreddit
+                    if selected_subreddit == "All":
+                        data = data  # Use the entire dataset when "All" is selected
+                    else:
+                        data = data[data['subreddit'] == selected_subreddit]
+
+                    # Check if there's data for the selected subreddit or all data
+                    if data.empty:
+                        return ui.HTML("<p>No posts available for the selected subreddit.</p>")
                     
-                    # Calculate the most frequent subreddits
-                    subreddit_freq = subreddits.value_counts().nlargest(20)
-                    
-                    # Convert to a list of strings in the format "Rank. Username: Frequency"
-                    top_subreddits_list = [f"{rank}. {subreddit}: {count}" 
-                                        for rank, (subreddit, count) in enumerate(subreddit_freq.items(), start=1)]
-                    
-                    # Render as a UI component, separated by line breaks
-                    return ui.HTML("<br>".join(top_subreddits_list))
+                    # Get top 20 posts by comment count, removing duplicate rows
+                    top_posts = data[['post_title', 'comment_count']].drop_duplicates().nlargest(20, 'comment_count')
+
+                    # Convert the top posts to an HTML list
+                    post_list_html = "<ol>"
+                    for _, row in top_posts.iterrows():
+                        post_list_html += f"<li><strong>{row['post_title']}</strong> - {row['comment_count']} comments</li>"
+                    post_list_html += "</ol>"
+
+                    # Display the top 20 posts in the card
+                    return ui.HTML(post_list_html)
+            
+            with ui.card():
+                ui.card_header("Most Upvoted Posts Over Time")
+
+                @render.ui
+                def top_upvoted_posts():
+                    # Filter the data to get unique posts by title and get the top 20 by vote_score
+                    unique_posts = df[['post_title', 'vote_score', 'timestamp']].drop_duplicates(subset='post_title')
+                    top_posts = unique_posts.nlargest(20, 'vote_score')
+
+                    # Check if there's data available
+                    if top_posts.empty:
+                        return ui.HTML("<p>No posts available.</p>")
+
+                    # Convert the top posts to an HTML list with title, vote score, and timestamp
+                    post_list_html = "<ol>"
+                    for _, row in top_posts.iterrows():
+                        post_list_html += f"<li><strong>{row['post_title']}</strong> - {row['vote_score']} upvotes on {row['timestamp'].strftime('%Y-%m-%d')}</li>"
+                    post_list_html += "</ol>"
+
+                    # Display the top 20 upvoted posts in the card
+                    return ui.HTML(post_list_html)
+
+
+            
         
         with ui.layout_column_wrap(height="400px"):
             # with ui.card():
@@ -507,7 +526,7 @@ with ui.nav_panel("Post title analysis"):
             #             # Display a placeholder message if the file is not found
             #             return ui.HTML("<p>No word cloud available for the selected subreddit.</p>")
             with ui.card():
-                ui.card_header("Total Keyword Occurrences Over Time")
+                ui.card_header("Keyword Distribution Over Time")
 
                 @render_plotly
                 def display_keyword_trend():
@@ -559,6 +578,252 @@ with ui.nav_panel("Post title analysis"):
                     )
 
                     return fig
+                
+
+with ui.nav_panel("User analysis by subreddit"):
+    with ui.layout_sidebar():
+        with ui.sidebar(open="desktop"):
+            # Create the subreddit selection input with "All Topics" as the first option
+            ui.input_select(
+                "subredditSelect_2", 
+                "Choose subreddit:", 
+                choices=subreddit_choices
+            )
+            
+            # Add an input field for entering a username
+            ui.input_text(
+                "usernameInput",
+                "Enter username:"
+            )
+            
+            # Add a slider for selecting toxicity level between 0 and 1
+            ui.input_slider(
+                "toxicityLevel",
+                "Choose toxicity level:",
+                min=0,
+                max=100,
+                value=50,  # Default starting value
+                step=1   # Slider increments by 0.01 for finer control
+            )
+        with ui.layout_columns(height="400px"):
+            with ui.card():
+                ui.card_header("Top 20 Toxic Users")
+
+                # @render.ui
+                # def subreddit_frequency():
+                #     # Get the subreddit data from the filtered dataset
+                #     subreddits = filtered_by_post_data_2()['username']
+                    
+                #     # Exclude entries with "[deleted]", "sneakpeek_bot", and "AutoModerator"
+                #     subreddits = subreddits[~subreddits.isin(["[deleted]", "sneakpeek_bot", "AutoModerator"])]
+                    
+                #     # Calculate the most frequent subreddits
+                #     subreddit_freq = subreddits.value_counts().nlargest(20)
+                    
+                #     # Convert to a list of strings in the format "Rank. Username: Frequency"
+                #     top_subreddits_list = [f"{rank}. {subreddit}: {count}" 
+                #                         for rank, (subreddit, count) in enumerate(subreddit_freq.items(), start=1)]
+                    
+                #     # Render as a UI component, separated by line breaks
+                #     return ui.HTML("<br>".join(top_subreddits_list))
+                @render.ui
+                def top_usernames():
+                    # Sort the DataFrame by hate_comment_count in descending order and get the top 20
+                    data = filtered_by_post_data_2()
+                    top_users = data.sort_values(by='hate_comment_count', ascending=False).head(20)
+
+                    # Convert the top users to an HTML list
+                    user_list_html = "<ol>"
+                    for _, row in top_users.iterrows():
+                        user_list_html += f"<li><strong>{row['username']}</strong> - {row['hate_comment_count']} comments</li>"
+                    user_list_html += "</ol>"
+
+                    # Display the top 20 usernames in the card
+                    return ui.HTML(user_list_html)
+            
+            with ui.card():
+                ui.card_header("Legolas, what do your elf eyes see?")
+
+                @render.text
+                def legolas():
+                    return "The Uruks turn north-east. They're taking the hobbits to Isengard!"
+            
+            with ui.card():
+                ui.card_header("Cumulative Plot Of Hate number of users for 10%")
+
+                @render_plotly
+                def cumulative_hate_plot():
+                    # Use the filtered data
+                    data = filtered_by_post_data_2()  # Assuming this function applies the subreddit and username filter
+
+                    # Check if the filtered data is empty
+                    if data.empty:
+                        fig = go.Figure()
+                        fig.add_annotation(
+                            x=0.5, y=0.5,
+                            text="No data available for the selected criteria.",
+                            showarrow=False,
+                            font=dict(size=16)
+                        )
+                        fig.update_layout(
+                            xaxis=dict(visible=False),
+                            yaxis=dict(visible=False)
+                        )
+                        return fig
+
+                    # Sort data by hate_percentage in descending order
+                    data = data.sort_values(by='hate_percentage', ascending=False).reset_index(drop=True)
+
+                    # Limit to top 10% or top 20 users for more focused plotting
+                    top_limit = int(0.1 * len(data))  # Adjust percentage as desired
+                    data = data.head(top_limit) if top_limit > 20 else data.head(20)
+
+                    # Calculate cumulative hate percentage and cumulative username count
+                    data['cumulative_hate_percentage'] = data['hate_percentage'].cumsum()
+
+                    # Normalize cumulative hate percentage to ensure it reaches exactly 100%
+                    data['cumulative_hate_percentage'] = (data['cumulative_hate_percentage'] / data['cumulative_hate_percentage'].iloc[-1]) * 100
+                    data['cumulative_user_count'] = range(1, len(data) + 1)
+
+                    # Create the cumulative plot with Plotly
+                    fig = go.Figure()
+
+                    fig.add_trace(
+                        go.Scatter(
+                            x=data['cumulative_user_count'],
+                            y=data['cumulative_hate_percentage'],
+                            mode='lines+markers',
+                            line=dict(width=2),
+                            marker=dict(size=6),
+                            name="Cumulative Hate Percentage"
+                        )
+                    )
+
+                    # Update layout for readability
+                    fig.update_layout(
+                        title="Cumulative Hate Percentage by Username Count",
+                        xaxis_title="Cumulative Username Count",
+                        yaxis_title="Cumulative Hate Percentage (%)",
+                        yaxis=dict(range=[0, 100]),  # Set y-axis range to 100% for clarity
+                        template="plotly_white",
+                        font=dict(size=12)
+                    )
+
+                    return fig
+
+                @render.ui
+                def usernames_for_hate_percentage_card():
+                    # Retrieve inputs
+                    threshold = input.toxicityLevel()
+                    subreddit_name = input.subredditSelect_2()
+                    subreddit_data = filtered_by_post_data_2()
+                  
+                    # Step 2: Calculate cumulative hate percentage and cumulative username count
+                    subreddit_data['cumulative_hate_percentage'] = subreddit_data['hate_percentage'].cumsum()
+                    subreddit_data['cumulative_user_count'] = range(1, len(subreddit_data) + 1)
+
+                    # Step 3: Find the minimum cumulative user count needed to meet or exceed the threshold
+                    result = subreddit_data[subreddit_data['cumulative_hate_percentage'] >= threshold].head(1)
+
+                    # Step 4: Prepare the output message
+                    if not result.empty:
+                        user_count = result['cumulative_user_count'].values[0]
+                        message = f"{user_count} usernames are needed to reach or exceed {threshold}% hate in {subreddit_name}."
+                    else:
+                        message = f"The cumulative hate percentage does not reach {threshold}% in {subreddit_name}."
+
+                    # Display the result in the UI
+                    return ui.HTML(f"<p>{message}</p>")
+
+                    
+        with ui.layout_column_wrap(height="400px"):
+            with ui.card():
+                ui.card_header("Time Plot of Chosen Username Comment Behaviour")
+
+                @render_plotly
+                def plot_user_comment_time_series_interactive():
+                    # Retrieve the username from the input
+                    username = input.usernameInput()
+                    Data = unfiltered_data()  # Assuming this function returns the filtered data
+
+                    # Check if username is provided
+                    if not username:
+                        fig = go.Figure()
+                        fig.add_annotation(
+                            x=0.5, y=0.5,
+                            text="Please enter a username.",
+                            showarrow=False,
+                            font=dict(size=16)
+                        )
+                        fig.update_layout(
+                            xaxis=dict(visible=False),
+                            yaxis=dict(visible=False)
+                        )
+                        return fig
+
+                    # Step 1: Filter data for the specified username
+                    user_data = Data[Data['username'] == username].copy()
+
+                    # Ensure there is data for the username
+                    if user_data.empty:
+                        fig = go.Figure()
+                        fig.add_annotation(
+                            x=0.5, y=0.5,
+                            text=f"No data available for username: {username}",
+                            showarrow=False,
+                            font=dict(size=16)
+                        )
+                        fig.update_layout(
+                            xaxis=dict(visible=False),
+                            yaxis=dict(visible=False)
+                        )
+                        return fig
+
+                    # Step 2: Ensure 'post_timestamp' is in datetime format if it's not already
+                    user_data['post_timestamp'] = pd.to_datetime(user_data['post_timestamp'], errors='coerce')
+
+                    # Step 3: Set 'post_timestamp' as the index to enable resampling
+                    user_data.set_index('post_timestamp', inplace=True)
+
+                    # Step 4: Resample data monthly, counting total comments and hate comments
+                    monthly_comment_counts = user_data.resample('M').size()  # Total comments per month
+                    monthly_hate_counts = user_data[user_data['BERT_2_hate'] == True].resample('M').size()  # Hate comments per month
+
+                    # Step 5: Create the interactive plot with Plotly
+                    fig = go.Figure()
+
+                    # Plot total comments
+                    fig.add_trace(go.Scatter(
+                        x=monthly_comment_counts.index,
+                        y=monthly_comment_counts.values,
+                        mode='lines+markers',
+                        name='Total Comments',
+                        line=dict(color='blue'),
+                        marker=dict(size=6)
+                    ))
+
+                    # Plot hate comments
+                    fig.add_trace(go.Scatter(
+                        x=monthly_hate_counts.index,
+                        y=monthly_hate_counts.values,
+                        mode='lines+markers',
+                        name='Hate Comments',
+                        line=dict(color='red'),
+                        marker=dict(size=6)
+                    ))
+
+                    # Update layout for better readability
+                    fig.update_layout(
+                        title=f"Monthly Comment Activity for {username}",
+                        xaxis_title="Month",
+                        yaxis_title="Number of Comments",
+                        hovermode="x unified",  # Shows all hover data for a specific x-axis value
+                        template="plotly_white",
+                    )
+
+                    return fig
+
+                
 
 
 with ui.nav_panel("Trigger analysis"):
@@ -902,6 +1167,9 @@ def filtered_by_post_data():
         selected_subreddit = input.subredditSelect()
         print(f"Selected Subreddit: {selected_subreddit}")  # Debugging output
 
+        # Retrieve selected date range
+        selected_date_range = input.date_range_3()  # New: Retrieve the date range
+
         # Start with a copy of the DataFrame
         data = df.copy()
         print(f"Initial data shape: {data.shape}")  # Debugging output
@@ -909,7 +1177,13 @@ def filtered_by_post_data():
         # Filter by subreddit if not "All"
         if selected_subreddit != "All":
             data = data[data['subreddit'] == selected_subreddit]
-            print(f"Filtered data shape: {data.shape}")  # Debugging output
+            print(f"Filtered data shape by subreddit: {data.shape}")  # Debugging output
+
+        # Filter by date range if provided
+        if selected_date_range:
+            start_date, end_date = pd.to_datetime(selected_date_range[0]), pd.to_datetime(selected_date_range[1])
+            data = data[(data['timestamp'] >= start_date) & (data['timestamp'] <= end_date)]
+            print(f"Filtered data shape by date range: {data.shape}")  # Debugging output
 
         # Check if data is empty and handle it gracefully
         if data.empty:
@@ -919,7 +1193,38 @@ def filtered_by_post_data():
 
     except Exception as e:
         print(f"Error in filtered_by_post_data: {e}")
-        return pd.DataFrame() 
+        return pd.DataFrame()
+    
+def filtered_by_post_data_2():
+    # Group by subreddit and username, counting the number of hate comments
+    data = df.copy()
+
+    selected_subreddit = input.subredditSelect_2()
+
+    if selected_subreddit != "All":
+            data = data[data['subreddit'] == selected_subreddit]
+            print(f"Filtered data shape by subreddit: {data.shape}")  # Debugging output
+
+    hate_counts = data.groupby(['subreddit', 'username']).size().reset_index(name='hate_comment_count')
+
+    # Calculate total hate comments per subreddit
+    total_hate_per_subreddit = hate_counts.groupby('subreddit')['hate_comment_count'].sum().reset_index(name='total_hate_comments')
+
+    # Merge to get total hate comments alongside username hate comment count
+    hate_counts = hate_counts.merge(total_hate_per_subreddit, on='subreddit')
+
+    # Calculate percentage of hate comments
+    hate_counts['hate_percentage'] = (hate_counts['hate_comment_count'] / hate_counts['total_hate_comments']) * 100
+
+    # Get the top 100 usernames for each subreddit
+    top_hate_users = hate_counts.sort_values(['subreddit', 'hate_comment_count'], ascending=[True, False])
+
+    #remove deleted users
+    top_hate_users = top_hate_users[top_hate_users['username'] != '[deleted]']
+    top_hate_users = top_hate_users[top_hate_users['username'] != 'sneakpeek_bot']
+
+    # Display the result
+    return top_hate_users
 
 def unfiltered_data():
     return df
