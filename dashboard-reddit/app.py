@@ -95,7 +95,7 @@ ICONS = {
 }
 
 # Main content with value boxes and plots
-with ui.nav_panel('Time series analysis'):
+with ui.nav_panel('Time Series Analysis'):
     with ui.layout_sidebar():
         with ui.sidebar(open="desktop"):
             ui.input_date_range(
@@ -126,7 +126,7 @@ with ui.nav_panel('Time series analysis'):
                     filtered_time_series_data().shape[0]
 
             with ui.value_box(showcase=ICONS["arrow-trend-up"]):
-                "Trend analysis"
+                "Trend Analysis"
                 
                 @render.text
                 def trend_display():
@@ -160,7 +160,7 @@ with ui.nav_panel('Time series analysis'):
 
 
             with ui.value_box(showcase=ICONS["percent"]):
-                "Percentage change"
+                "Percentage Change"
 
                 @render.text
                 def regression_percentage_change_display():
@@ -345,12 +345,12 @@ with ui.nav_panel('Trend Drivers'):
             #                         And if I gotta drop another infant from a wall <br>
             #                         In an instant so we all don't die""")
                 
-            with ui.card():
-                ui.card_header("Free Churro")
+            # with ui.card():
+            #     ui.card_header("Free Churro")
 
-                @render.text
-                def free_churro_text():
-                    return free_churro
+            #     @render.text
+            #     def free_churro_text():
+            #         return free_churro
 
             with ui.card(height='800px'):
                 ui.card_header("Keyword Word Cloud")
@@ -413,13 +413,13 @@ with ui.nav_panel('Trend Drivers'):
 
 
 
-with ui.nav_panel("Subreddit Post analysis"):
+with ui.nav_panel("Subreddit Post Analysis"):
     with ui.layout_sidebar():
         with ui.sidebar(open="desktop"):
             # Create the topic selection input with "All Topics" as the first option
             ui.input_select(
                 "subredditSelect", 
-                "Choose subreddit:", 
+                "Choose Subreddit:", 
                 choices=subreddit_choices
             )
             ui.input_date_range(
@@ -441,7 +441,7 @@ with ui.nav_panel("Subreddit Post analysis"):
 
         with ui.layout_column_wrap(height="300px"):
             with ui.card():
-                ui.card_header("Wordcloud of Posts with the most hate")
+                ui.card_header("Wordcloud Of Posts With The Most Hate")
 
                 # @render.ui
                 # def wordcloud_img():
@@ -621,26 +621,26 @@ with ui.nav_panel("Subreddit Post analysis"):
                     return fig
                 
 
-with ui.nav_panel("User analysis by subreddit"):
+with ui.nav_panel("User Analysis By Subreddit"):
     with ui.layout_sidebar():
         with ui.sidebar(open="desktop"):
             # Create the subreddit selection input with "All Topics" as the first option
             ui.input_select(
                 "subredditSelect_2", 
-                "Choose subreddit:", 
+                "Choose Subreddit:", 
                 choices=subreddit_choices
             )
             
             # Add an input field for entering a username
             ui.input_text(
                 "usernameInput",
-                "Enter username:"
+                "Enter Username:"
             )
             
             # Add a slider for selecting toxicity level between 0 and 1
             ui.input_slider(
                 "toxicityLevel",
-                "Choose toxicity level:",
+                "Choose Toxicity Level:",
                 min=0,
                 max=100,
                 value=50,  # Default starting value
@@ -682,15 +682,15 @@ with ui.nav_panel("User analysis by subreddit"):
                     # Display the top 20 usernames in the card
                     return ui.HTML(user_list_html)
             
-            with ui.card():
-                ui.card_header("Legolas, what do your elf eyes see?")
+            # with ui.card():
+            #     ui.card_header("Legolas, what do your elf eyes see?")
 
-                @render.text
-                def legolas():
-                    return "The Uruks turn north-east. They're taking the hobbits to Isengard!"
+            #     @render.text
+            #     def legolas():
+            #         return "The Uruks turn north-east. They're taking the hobbits to Isengard!"
             
             with ui.card():
-                ui.card_header("Cumulative Plot Of Hate number of users for 10%")
+                ui.card_header("Cumulative Plot Of Hate")
 
                 @render_plotly
                 def cumulative_hate_plot():
@@ -779,7 +779,7 @@ with ui.nav_panel("User analysis by subreddit"):
                     
         with ui.layout_column_wrap(height="400px"):
             with ui.card():
-                ui.card_header("Time Plot of Chosen Username Comment Behaviour")
+                ui.card_header("Time Plot Of Chosen Username Comment Behaviour")
 
                 @render_plotly
                 def plot_user_comment_time_series_interactive():
@@ -854,16 +854,16 @@ with ui.nav_panel("User analysis by subreddit"):
 
                     return fig
 
-with ui.nav_panel("Trigger analysis"):
+with ui.nav_panel("Trigger Analysis"):
     with ui.layout_sidebar():
         with ui.sidebar(open="desktop"):
             ui.input_select(
                 "card_selection",
-                "Select model to display:",
+                "Select Model To Display:",
                 choices=["Lime", "Integrated Gradients"]
             )
             # Text input and submit/reset buttons
-            ui.input_text("input_text", "Enter text:")
+            ui.input_text("input_text", "Enter Text:")
             # ui.input_action_button("submit_text", "Submit")  # Submit button
             ui.input_action_button("reset_text", "Reset")    # Reset button
 
@@ -1003,7 +1003,7 @@ with ui.nav_panel("Trigger analysis"):
                     
 
             with ui.card():
-                ui.card_header("Predicted Topic with Explanation")
+                ui.card_header("Predicted Topic With Explanation")
 
                 # Function to get LIME explanation as a list of words and their contribution scores
                 @reactive.Calc
@@ -1250,7 +1250,7 @@ def filtered_by_post_data_2():
     #remove deleted users
     top_hate_users = top_hate_users[top_hate_users['username'] != '[deleted]']
     top_hate_users = top_hate_users[top_hate_users['username'] != 'sneakpeek_bot']
-    # top_hate_users = top_hate_users[top_hate_users['username'] != 'AutoModerator']
+    top_hate_users = top_hate_users[top_hate_users['username'] != 'AutoModerator']
 
     # Display the result
     return top_hate_users
