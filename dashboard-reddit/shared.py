@@ -55,10 +55,10 @@ def generate_lime_html(text, num_features=10, threshold=0.05):
     html_text = "<div style='font-family: Arial, sans-serif; font-size: 16px;'>"
     for token in tokens:
         score = explanation_dict.get(token, 0)  # Default score of 0 if token not in explanation
-        # Apply green for positive scores and red for negative, with intensity based on the score's magnitude
+        # Apply red for positive scores and green for negative, with intensity based on the score's magnitude
         color = (
-            f"rgba(152, 251, 152, {min(1, abs(score) * 3)})" if score > 0 else 
-            f"rgba(255, 99, 71, {min(1, abs(score) * 3)})"
+            f"rgba(255, 99, 71, {min(1, abs(score) * 3)})" if score > 0 else 
+            f"rgba(152, 251, 152, {min(1, abs(score) * 3)})"
         )
         style = f"background-color: {color}; padding: 2px 5px; margin: 2px; display: inline-block; border-radius: 4px; color: black;"
         html_text += f"<span style='{style}'>{token}</span> "
@@ -161,6 +161,8 @@ def generate_keyword_wordcloud(docs, ngram_range=(1, 2), top_n=10, diversity=0.5
     wordcloud = WordCloud(width=800, height=400, background_color='white').generate_from_frequencies(top_20_phrase_counts)
 
     return wordcloud
+
+
 
 
 

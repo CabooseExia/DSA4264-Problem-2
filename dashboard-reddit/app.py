@@ -746,7 +746,7 @@ with ui.nav_panel("Trigger analysis"):
                         words, scores = zip(*explanation_list)  # Separate words and their scores
 
                         # Define colors based on score direction (positive or negative)
-                        colors = ["#98FB98" if score > 0 else "#FF6347" for score in scores]  # Light green for positive, red for negative
+                        colors = ["#FF6347" if score > 0 else "#98FB98" for score in scores]  # Red for positive, light green for negative
 
                         # Create the Plotly bar plot with the new color scheme
                         fig = go.Figure(
@@ -775,6 +775,7 @@ with ui.nav_panel("Trigger analysis"):
                         )
 
                         return fig
+                    
                     else:
                         text = input.input_text()  # Retrieve text from input
 
