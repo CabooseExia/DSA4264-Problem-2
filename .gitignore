@@ -4,6 +4,8 @@
 /Analysis-sy.ipynb
 dashboard-reddit/fine_tuned_bert_model_3
 Reddit_Dashboard.ipynb
+/dashboard-reddit/neural_net_threshold_4.pth
+/dashboard-reddit/vectorizer.pkl
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
