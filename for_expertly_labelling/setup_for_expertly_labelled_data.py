@@ -9,10 +9,10 @@ from nltk.corpus import stopwords
 df = pd.DataFrame()
 
 chunk_size = 10000
-for chunk in pd.read_csv('data/Reddit-Threads_2020-2021.csv', chunksize=chunk_size):
+for chunk in pd.read_csv('../data/Reddit-Threads_2020-2021.csv', chunksize=chunk_size):
     print(chunk.head())  
     df = pd.concat([df, chunk])
-for chunk in pd.read_csv('data/Reddit-Threads_2022-2023.csv', chunksize=chunk_size):
+for chunk in pd.read_csv('../data/Reddit-Threads_2022-2023.csv', chunksize=chunk_size):
     print(chunk.head())  
     df = pd.concat([df, chunk])
 

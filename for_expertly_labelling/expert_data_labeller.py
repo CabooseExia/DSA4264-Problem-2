@@ -1,6 +1,6 @@
 import pandas as pd
 
-df = pd.read_csv('data/200_expertly_chosen_texts.csv')
+df = pd.read_csv('../data/200_expertly_chosen_texts.csv')
 
 df['toxic'] = False
 df['hateful'] = False
