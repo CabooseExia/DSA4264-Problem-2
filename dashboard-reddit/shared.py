@@ -1,6 +1,7 @@
 from pathlib import Path
 from transformers import BertForSequenceClassification, BertTokenizer
 import torch
+import torch.nn as nn
 from IPython.display import display, HTML
 from lime.lime_text import LimeTextExplainer
 from captum.attr import IntegratedGradients
@@ -8,6 +9,8 @@ from wordcloud import WordCloud
 from collections import Counter
 from keybert import KeyBERT
 import matplotlib.pyplot as plt
+import pickle
+
 
 import pandas as pd
 
@@ -20,125 +23,177 @@ explainer = LimeTextExplainer(class_names=["Non-trigger", "Trigger"])
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def load_model():
-    model_dir = model_dir = app_dir / 'fine_tuned_bert_model_3'
-    model = BertForSequenceClassification.from_pretrained(str(model_dir), output_attentions=True)
-    tokenizer = BertTokenizer.from_pretrained(str(model_dir))
+# Define the custom neural network architecture
+class NeuralNet(nn.Module):
+    def __init__(self, input_size, hidden_units):
+        super().__init__()
+        self.fc1 = nn.Linear(input_size, hidden_units)
+        self.fc2 = nn.Linear(hidden_units, hidden_units)
+        self.fc3 = nn.Linear(hidden_units, 1)
+        self.relu = nn.ReLU()
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.relu(self.fc1(x))
+        x = self.relu(self.fc2(x))
+        x = self.sigmoid(self.fc3(x))
+        return x
+def load_model(input_size=5000, hidden_units=128, model_path=(app_dir/"neural_net_threshold_4.pth")):
+    # Instantiate the model with the given architecture
+    model = NeuralNet(input_size, hidden_units)
+    
+    # Load the saved state dictionary
+    model.load_state_dict(torch.load(model_path, map_location=torch.device("cuda" if torch.cuda.is_available() else "cpu")))
+    
+    # Move the model to GPU if available
     model.to(device)
+    
+    # Set the model to evaluation mode
     model.eval()
-    return model, tokenizer
+    
+    return model
 
-def lime_predict(texts, model, tokenizer):
-    inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=128)
-    inputs = {key: value.to(model.device) for key, value in inputs.items()}
+with open(app_dir/"vectorizer.pkl", "rb") as f:
+    vectorizer = pickle.load(f)
+best_model = load_model()
+# def load_model():
+#     model_dir = model_dir = app_dir / 'fine_tuned_bert_model_3'
+#     model = BertForSequenceClassification.from_pretrained(str(model_dir), output_attentions=True)
+#     tokenizer = BertTokenizer.from_pretrained(str(model_dir))
+#     model.to(device)
+#     model.eval()
+#     return model, tokenizer
+
+# Define the function for LIME to make predictions with best_model
+def lime_predict(texts):
+    # Transform texts to TF-IDF vectors
+    text_tfidf = vectorizer.transform(texts)
+    
+    # Convert to dense format and then to PyTorch tensor
+    inputs = torch.tensor(text_tfidf.toarray(), dtype=torch.float32)
+    
+    # Move inputs to the same device as best_model
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    inputs = inputs.to(device)
+    
+    # Predict probabilities using the neural network
     with torch.no_grad():
-        outputs = model(**inputs)
-    probs = torch.nn.functional.softmax(outputs.logits, dim=-1)
-    return probs.cpu().numpy()
+        outputs = best_model(inputs).squeeze()  # Squeeze to remove extra dimensions if any
+    
+    # Check if outputs is a single value or a batch
+    if outputs.dim() == 0:  # Handle single-value output
+        outputs = outputs.unsqueeze(0)
+    
+    # Convert model output to probabilities
+    probs = torch.cat([1 - outputs.unsqueeze(1), outputs.unsqueeze(1)], dim=1)
+    return probs.cpu().numpy()  # Return as numpy array for LIME
 
-def generate_lime_html(text, num_features=10, threshold=0.05):
-    # Generate LIME explanation for the given text
-    model, tokenizer = load_model()
+def get_lime_word_contributions(text):
+    # Generate LIME explanation for the input text
+    explainer = LimeTextExplainer(class_names=["Non-trigger", "Trigger"])
     explanation = explainer.explain_instance(
         text,
-        lambda x: lime_predict(x, model, tokenizer),  # Wrap model prediction for LIME
-        num_features=num_features
+        lime_predict,  # Replace with your prediction function
+        num_features=10  # Number of words to display
     )
 
-    # Create a dictionary for easy lookup of scores by word
-    explanation_dict = dict(explanation.as_list())
+    # Extract word contributions as a list of (word, score) tuples
+    word_contributions = explanation.as_list()
+    return word_contributions
 
-    # Tokenize the original text
-    tokens = text.split()  # Simple split; adjust if necessary for more complex tokenization
-    
-    # Generate HTML for tokens in original order with Integrated Gradients-like coloring
-    html_text = "<div style='font-family: Arial, sans-serif; font-size: 16px;'>"
-    for token in tokens:
-        score = explanation_dict.get(token, 0)  # Default score of 0 if token not in explanation
-        # Apply red for positive scores and green for negative, with intensity based on the score's magnitude
-        color = (
-            f"rgba(255, 99, 71, {min(1, abs(score) * 3)})" if score > 0 else 
-            f"rgba(152, 251, 152, {min(1, abs(score) * 3)})"
-        )
-        style = f"background-color: {color}; padding: 2px 5px; margin: 2px; display: inline-block; border-radius: 4px; color: black;"
-        html_text += f"<span style='{style}'>{token}</span> "
-    html_text += "</div>"
-    
+def get_lime_highlighted_html(text):
+    # Initialize the LIME explainer
+    explainer = LimeTextExplainer(class_names=["Non-trigger", "Trigger"])
+
+    # Generate LIME explanation for the input text
+    explanation = explainer.explain_instance(
+        text,
+        lime_predict,  # Replace with your model prediction function
+        num_features=10  # Number of words to highlight
+    )
+
+    # Extract word contributions as a dictionary {word: score}
+    word_contributions = dict(explanation.as_list())
+
+    # Split the original text into words to keep the order
+    words = text.split()
+
+    # Generate HTML with highlighted words
+    html_text = ""
+    for word in words:
+        score = word_contributions.get(word, 0)  # Get the attribution score or default to 0
+        if score != 0:
+            # Determine color and intensity based on the score
+            color = f"rgba(255, 0, 0, {min(1, abs(score))})" if score > 0 else f"rgba(0, 255, 0, {min(1, abs(score))})"
+            style = f"background-color: {color}; font-weight: bold;"
+            html_text += f"<span style='{style}'>{word}</span> "
+        else:
+            html_text += f"{word} "  # No styling for words with zero attribution
+
     return html_text
 
-
-def compute_attributions(text): #for integrated gradients
-    model, tokenizer = load_model()
-    # Tokenize and get embeddings
-    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=128).to(device)
-    input_ids = inputs["input_ids"]
-    attention_mask = inputs["attention_mask"]
-    embeddings = model.bert.embeddings(input_ids.to(device)).detach().requires_grad_(True)
-
-    # Integrated Gradients setup
-    ig = IntegratedGradients(lambda embeds: torch.softmax(model(inputs_embeds=embeds, attention_mask=attention_mask).logits, dim=-1))
+# Function to compute Integrated Gradients attributions
+def integrated_gradients_attributions(text):
+    # Split the text into words
+    words = text.split()
     
-    # Compute attributions
-    attributions = ig.attribute(embeddings, baselines=torch.zeros_like(embeddings).to(device), target=1, n_steps=50)
-    attributions_sum = attributions.sum(dim=-1).squeeze(0)
-
-    # Extract tokens and attributions, removing special tokens
-    tokens = tokenizer.convert_ids_to_tokens(input_ids[0])[1:-1]
-    attributions = attributions_sum[1:-1].cpu().detach().numpy()
+    # Vectorize the text using the TF-IDF vectorizer
+    tfidf_vector = vectorizer.transform([text]).toarray()
+    input_tensor = torch.tensor(tfidf_vector, dtype=torch.float32)
     
-    return tokens, attributions
-
-def generate_integrated_gradients_html(text, num_features=10, threshold=0.05):
-    # Load model and tokenizer
-    model, tokenizer = load_model()
-    
-    # Tokenize and get embeddings
+    # Move tensor and model to the same device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=128).to(device)
-    input_ids = inputs["input_ids"]
-    attention_mask = inputs["attention_mask"]
+    input_tensor = input_tensor.to(device)
+    best_model.to(device)
     
-    # Generate embeddings with BERT’s embedding layer
-    embeddings = model.bert.embeddings(input_ids).detach().requires_grad_(True)
-    
-    # Define the forward function for Integrated Gradients
-    def forward_func(embeddings, attention_mask):
-        outputs = model(inputs_embeds=embeddings, attention_mask=attention_mask)
-        logits = outputs.logits
-        return torch.softmax(logits, dim=-1)
-    
-    # Initialize Integrated Gradients
-    ig = IntegratedGradients(forward_func)
+    # Initialize Integrated Gradients with the best_model
+    ig = IntegratedGradients(best_model)
     
     # Compute attributions with Integrated Gradients
-    attributions = ig.attribute(
-        embeddings,
-        baselines=torch.zeros_like(embeddings).to(device),  # Baseline as zero tensor
-        additional_forward_args=(attention_mask,),
-        target=1,  # Assuming class index 1 corresponds to "Trigger"
-        n_steps=50
-    )
+    attributions, _ = ig.attribute(input_tensor, return_convergence_delta=True)
+    attributions_np = attributions.cpu().detach().numpy()[0]
     
-    # Sum attributions across embedding dimensions
-    attributions_sum = attributions.sum(dim=-1).squeeze(0)
+    # Map TF-IDF features (words) to attributions
+    tfidf_words = vectorizer.get_feature_names_out()
+    word_attributions = dict(zip(tfidf_words, attributions_np))
     
-    # Extract tokens and attributions, removing special tokens
-    tokens = tokenizer.convert_ids_to_tokens(input_ids[0])[1:-1]  # Remove [CLS] and [SEP] tokens
-    attributions_scores = attributions_sum[1:-1].cpu().detach().numpy()
+    # Retrieve attribution for each word in the original text or assign 0 if not in TF-IDF vocab
+    final_attributions = [word_attributions.get(word, 0) for word in words]
+    
+    return words, final_attributions
 
-    # Normalize attribution scores for color intensity
-    max_score = max(abs(attributions_scores).max(), threshold)  # Prevent division by zero
-    
-    # Generate HTML with color-coded tokens based on attribution scores
-    html_text = "<div style='font-family: Arial, sans-serif; font-size: 16px;'>"
-    for token, score in zip(tokens, attributions_scores):
-        # Determine color intensity based on normalized score
-        intensity = abs(score) / max_score
-        color = f'rgba(255, 0, 0, {intensity})' if score > 0 else f'rgba(0, 128, 0, {intensity})'
-        style = f"background-color: {color}; padding: 2px 5px; margin: 2px; display: inline-block; border-radius: 4px; color: black;"
-        html_text += f"<span style='{style}'>{token}</span> "
-    html_text += "</div>"
-    
+# Initialize Integrated Gradients with the model
+ig = IntegratedGradients(best_model)
+
+# Function to compute IG attributions and generate HTML with highlighted words
+def get_ig_highlighted_html(text):
+    # Tokenize the input text
+    words = text.split()
+
+    # Vectorize the text using the TF-IDF vectorizer
+    input_tfidf = vectorizer.transform([text]).toarray()
+    input_tensor = torch.tensor(input_tfidf, dtype=torch.float32).to(next(best_model.parameters()).device)
+
+    # Compute attributions using Integrated Gradients
+    attributions, delta = ig.attribute(input_tensor, return_convergence_delta=True)
+    attributions_np = attributions.cpu().detach().numpy()[0]
+
+    # Get the words from TF-IDF and map them to their attributions
+    tfidf_words = vectorizer.get_feature_names_out()
+    word_attributions = dict(zip(tfidf_words, attributions_np))
+
+    # Generate HTML with highlighted words in original order
+    html_text = ""
+    for word in words:
+        score = word_attributions.get(word, 0)  # Get the attribution score or default to 0
+        # Set color with a higher minimum intensity and scaling factor
+        if score > 0:
+            color = f"rgba(255, 0, 0, {max(0.3, min(1, abs(score) * 5))})"  # Red for positive scores
+        else:
+            color = f"rgba(0, 255, 0, {max(0.3, min(1, abs(score) * 5))})"  # Green for negative scores
+        style = f"background-color: {color} !important; font-weight: bold;" if abs(score) > 0.05 else ""
+        html_text += f"<span style='{style}'>{word}</span> "
+
     return html_text
 
 def generate_keyword_wordcloud(docs, ngram_range=(1, 2), top_n=10, diversity=0.5):
