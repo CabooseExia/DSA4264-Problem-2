@@ -353,7 +353,7 @@ with ui.nav_panel('Trend Drivers'):
             #         return free_churro
 
             with ui.card(height='800px'):
-                ui.card_header("Keyword Word Cloud")
+                ui.card_header("Keyword Wordcloud (This Little Maneuver's Gonna Cost Us 51 Years)")
 
                 @render.ui
                 def keyword_wordcloud():
