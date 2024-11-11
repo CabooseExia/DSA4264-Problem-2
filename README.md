@@ -84,7 +84,7 @@ These keys are essential for accessing the respective APIs. Make sure to obtain 
 
 ### 5. Model for Dashboard
 
-To use the fine-tuned model in the dashboard, please contact `mibs862` to obtain the `fine_tuned_bert_model_3` folder. Once you have it, place the folder inside the `dashboard-reddit` directory.
+To use the fine-tuned model in the dashboard, please contact `mibs862` to obtain the `neural_net_threshold_4.pth` and `vectorizer.pkl` files. Once you have it, place the files inside the `dashboard-reddit` directory.
 
 ---
 
