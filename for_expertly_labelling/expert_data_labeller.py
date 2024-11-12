@@ -46,5 +46,5 @@ for index, row in df.iterrows():
 
 
 # After labeling, save the DataFrame to a CSV file
-df.to_csv('data/labeled_data.csv', index=False)
-print("Labeled data saved to 'labeled_data.csv'.")
+df.to_csv('../data/labeled_data.csv', index=False)
+print("Labeled data saved to '../data/labeled_data.csv'.")
