@@ -54,6 +54,7 @@ To run all the code in this project, please ensure you have a folder named `data
 - **Parquet Files:**
   - `glenn_and_sy.parquet`
   - `hate_toxic_topical_comments.parquet`
+  - `post.parquet`
 
 Ensure all these files are in the `data` folder to avoid issues when running the code.
 
