@@ -50,11 +50,17 @@ To run all the code in this project, please ensure you have a folder named `data
   - `Data_6.csv`
   - `Data_7.csv`
   - `deberta_v3_labelled_3_ALL.csv`
+  - `reddit_posts_data.csv`
+  - `SG.csv`
+  - `SGRaw.csv`
+  - `SGHappenings.csv`
 
 - **Parquet Files:**
   - `post_topic_data.parquet`
   - `hate_toxic_topical_comments.parquet`
   - `post.parquet`
+  - `final_topics_overview.parquet`
+  - `sampled_hate_cleaned_w_topics.parquet`
 
 Ensure all these files are in the `data` folder to avoid issues when running the code.
 
