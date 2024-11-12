@@ -18,6 +18,7 @@ app_dir = Path(__file__).parent
 
 df = pd.read_parquet(app_dir / ".." / "data" / "glenn_and_sy.parquet")
 final_topic_overview = pd.read_parquet(app_dir / ".." / "data" / "final_topics_overview.parquet")
+post = pd.read_parquet(app_dir / ".." / "data" / "post.parquet")
 
 explainer = LimeTextExplainer(class_names=["Non-trigger", "Trigger"])
 

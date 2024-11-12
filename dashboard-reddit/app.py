@@ -2,7 +2,7 @@ import faicons as fa
 import plotly.express as px
 
 # Load data and compute static values
-from shared import app_dir, df, free_churro, final_topic_overview, load_model, lime_predict, get_lime_highlighted_html, get_ig_highlighted_html, get_lime_word_contributions
+from shared import app_dir, df, post, free_churro, final_topic_overview, load_model, lime_predict, get_lime_highlighted_html, get_ig_highlighted_html, get_lime_word_contributions
 from shinywidgets import render_plotly
 
 from shiny import reactive, render
@@ -647,7 +647,7 @@ with ui.nav_panel("User Analysis By Subreddit"):
                 "Choose Toxicity Level:",
                 min=0,
                 max=100,
-                value=50,  # Default starting value
+                value=10,  # Default starting value
                 step=1   # Slider increments by 0.01 for finer control
             )
         with ui.layout_columns(height="400px"):
@@ -757,28 +757,58 @@ with ui.nav_panel("User Analysis By Subreddit"):
                     return fig
 
                 @render.ui
-                def usernames_for_hate_percentage_card():
+                def display_top_percent_hate_usernames():
                     # Retrieve inputs
-                    threshold = input.toxicityLevel()
-                    subreddit_name = input.subredditSelect_2()
+                    threshold = input.toxicityLevel()  # Use toxicity level as the threshold for cumulative hate percentage
+                    selected_subreddit = input.subredditSelect_2()  # Selected subreddit
+                    
+                    # Retrieve the filtered data for hate comments using filtered_by_post_data_2 function
                     subreddit_data = filtered_by_post_data_2()
-                  
-                    # Step 2: Calculate cumulative hate percentage and cumulative username count
-                    subreddit_data['cumulative_hate_percentage'] = subreddit_data['hate_percentage'].cumsum()
-                    subreddit_data['cumulative_user_count'] = range(1, len(subreddit_data) + 1)
 
-                    # Step 3: Find the minimum cumulative user count needed to meet or exceed the threshold
-                    result = subreddit_data[subreddit_data['cumulative_hate_percentage'] >= threshold].head(1)
+                    # Filter for the selected subreddit if "All" is not selected
+                    if selected_subreddit != "All":
+                        subreddit_data = subreddit_data[subreddit_data['subreddit'] == selected_subreddit]
 
-                    # Step 4: Prepare the output message
-                    if not result.empty:
-                        user_count = result['cumulative_user_count'].values[0]
-                        message = f"{user_count} usernames are needed to reach or exceed {threshold}% hate in {subreddit_name}."
+                    # Sort the data by subreddit and hate_percentage in descending order
+                    df_sorted = subreddit_data.sort_values(by=['subreddit', 'hate_percentage'], ascending=[True, False])
+
+                    # Define a function to get the count of usernames contributing to top 10% hate_percentage
+                    def count_top_users_by_hate_threshold(group, threshold):
+                        # Calculate cumulative sum of hate_percentage
+                        group = group.copy()  # Avoid modifying the original DataFrame
+                        group['cumulative_hate_percentage'] = group['hate_percentage'].cumsum()
+
+                        # Calculate the target cumulative hate percentage
+                        target_percentage = group['hate_percentage'].sum() * (threshold / 100)
+
+                        # Count usernames until the cumulative hate percentage reaches or exceeds the target
+                        count = group[group['cumulative_hate_percentage'] <= target_percentage].shape[0]
+
+                        # Add one more user if necessary to reach or slightly exceed the threshold
+                        if count < group.shape[0] and group['cumulative_hate_percentage'].iloc[count] < target_percentage:
+                            count += 1
+
+                        return count
+
+                    # If "All" is selected, apply the function on the entire dataset
+                    if selected_subreddit == "All":
+                        total_usernames_count = count_top_users_by_hate_threshold(df_sorted, threshold)
+                        result_text = f"<h4>Total Hate Contribution Analysis</h4><p>{total_usernames_count} usernames contribute to the top {threshold}% hate comments across all subreddits.</p>"
                     else:
-                        message = f"The cumulative hate percentage does not reach {threshold}% in {subreddit_name}."
+                        # Apply the function to the selected subreddit group
+                        top_usernames_by_hate_threshold = df_sorted.groupby('subreddit').apply(
+                            lambda group: count_top_users_by_hate_threshold(group, threshold)
+                        ).reset_index(name='username_count')
 
-                    # Display the result in the UI
-                    return ui.HTML(f"<p>{message}</p>")
+                        # Show results for the selected subreddit only
+                        username_count = top_usernames_by_hate_threshold.loc[
+                            top_usernames_by_hate_threshold['subreddit'] == selected_subreddit, 'username_count'
+                        ].values[0]
+                        result_text = f"<h4>{selected_subreddit} Hate Contribution Analysis</h4><p>{username_count} usernames contribute to the top {threshold}% hate comments in {selected_subreddit}.</p>"
+
+                    # Display the result as HTML text in the UI
+                    return ui.HTML(result_text)
+
 
                     
         with ui.layout_column_wrap(height="400px"):
@@ -1254,15 +1284,16 @@ def filtered_by_post_data():
     
 def filtered_by_post_data_2():
     # Group by subreddit and username, counting the number of hate comments
-    data = df.copy()
+    Data = post.copy()
+    Data = Data.drop(columns=['Unnamed: 0'])
+    # Filter for hate comments and remove specific usernames
+    hate_comments = Data[(Data['BERT_2_hate'] == True) & 
+                         (Data['username'] != '[deleted]') & 
+                         (Data['username'] != 'sneakpeek_bot') & 
+                         (Data['username'] != 'AutoModerator')]
 
-    selected_subreddit = input.subredditSelect_2()
-
-    if selected_subreddit != "All":
-            data = data[data['subreddit'] == selected_subreddit]
-            print(f"Filtered data shape by subreddit: {data.shape}")  # Debugging output
-
-    hate_counts = data.groupby(['subreddit', 'username']).size().reset_index(name='hate_comment_count')
+    # Group by subreddit and username, counting the number of hate comments
+    hate_counts = hate_comments.groupby(['subreddit', 'username']).size().reset_index(name='hate_comment_count')
 
     # Calculate total hate comments per subreddit
     total_hate_per_subreddit = hate_counts.groupby('subreddit')['hate_comment_count'].sum().reset_index(name='total_hate_comments')
@@ -1273,16 +1304,11 @@ def filtered_by_post_data_2():
     # Calculate percentage of hate comments
     hate_counts['hate_percentage'] = (hate_counts['hate_comment_count'] / hate_counts['total_hate_comments']) * 100
 
-    # Get the top 100 usernames for each subreddit
+    # Sort by subreddit and hate percentage in descending order
     top_hate_users = hate_counts.sort_values(['subreddit', 'hate_comment_count'], ascending=[True, False])
 
-    #remove deleted users
-    top_hate_users = top_hate_users[top_hate_users['username'] != '[deleted]']
-    top_hate_users = top_hate_users[top_hate_users['username'] != 'sneakpeek_bot']
-    top_hate_users = top_hate_users[top_hate_users['username'] != 'AutoModerator']
-
-    # Display the result
-    return top_hate_users
+    # Return the result
+    return top_hate_users   
 
 def unfiltered_data():
     return df
