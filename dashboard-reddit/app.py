@@ -876,7 +876,7 @@ with ui.nav_panel("User Analysis By Subreddit"):
                         x=monthly_hate_counts.index,
                         y=monthly_hate_counts.values,
                         mode='lines+markers',
-                        name='Hate Comments',
+                        name='Harmful Comments',
                         line=dict(color='red'),
                         marker=dict(size=6)
                     ))
