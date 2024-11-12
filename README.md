@@ -52,7 +52,7 @@ To run all the code in this project, please ensure you have a folder named `data
   - `deberta_v3_labelled_3_ALL.csv`
 
 - **Parquet Files:**
-  - `glenn_and_sy.parquet`
+  - `post_topic_data.parquet`
   - `hate_toxic_topical_comments.parquet`
   - `post.parquet`
 
