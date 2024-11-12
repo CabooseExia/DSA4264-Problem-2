@@ -79,7 +79,7 @@ for i, row in df_sampled.iterrows():
 selected_rows_df = df_sampled.loc[selected_rows]
 
 # Save the selected rows DataFrame to a CSV file
-selected_rows_df.to_csv('data/expertly_selected_data.csv', index=False)
+selected_rows_df.to_csv('../data/expertly_selected_data.csv', index=False)
 
 # Display the selected rows DataFrame and confirmation of saving
 print(f"\nSelected {selected_count} rows in total.")
