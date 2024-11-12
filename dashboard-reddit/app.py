@@ -2,7 +2,7 @@ import faicons as fa
 import plotly.express as px
 
 # Load data and compute static values
-from shared import app_dir, df, free_churro, final_topic_overview, load_model, lime_predict, generate_lime_html, compute_attributions, generate_integrated_gradients_html
+from shared import app_dir, df, post, free_churro, final_topic_overview, load_model, lime_predict, get_lime_highlighted_html, get_ig_highlighted_html, get_lime_word_contributions
 from shinywidgets import render_plotly
 
 from shiny import reactive, render
@@ -24,6 +24,7 @@ import plotly.graph_objects as go
 from IPython.display import display, HTML
 from captum.attr import IntegratedGradients
 from transformers import AutoTokenizer, AutoModel
+import pickle
 
 earliest_date = df['timestamp'].min()
 latest_date = df['timestamp'].max()
@@ -38,11 +39,14 @@ subreddit = df['subreddit'].unique().tolist()
 subreddit = [x for x in subreddit if str(x) != 'nan']
 subreddit_choices = ["All"] + subreddit
 
-model, tokenizer = load_model()
+# model, tokenizer = load_model()
+best_model = load_model()
 explainer = LimeTextExplainer(class_names=["Non-trigger", "Trigger"])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+with open(app_dir/"vectorizer.pkl", "rb") as f:
+    vectorizer = pickle.load(f)
 
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
+# device = 'cuda' if torch.cuda.is_available() else 'cpu'
 model_name = 'sentence-transformers/all-MiniLM-L6-v2'
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 transformer_model = AutoModel.from_pretrained(model_name).to(device)
@@ -353,7 +357,7 @@ with ui.nav_panel('Trend Drivers'):
             #         return free_churro
 
             with ui.card(height='800px'):
-                ui.card_header("Keyword Word Cloud")
+                ui.card_header("Keyword Wordcloud (This Little Maneuver's Gonna Cost Us 51 Years)")
 
                 @render.ui
                 def keyword_wordcloud():
@@ -441,7 +445,7 @@ with ui.nav_panel("Subreddit Post Analysis"):
 
         with ui.layout_column_wrap(height="300px"):
             with ui.card():
-                ui.card_header("Wordcloud Of Posts With The Most Hate")
+                ui.card_header("Wordcloud Of Posts With The Most Harmful Content")
 
                 # @render.ui
                 # def wordcloud_img():
@@ -640,15 +644,15 @@ with ui.nav_panel("User Analysis By Subreddit"):
             # Add a slider for selecting toxicity level between 0 and 1
             ui.input_slider(
                 "toxicityLevel",
-                "Choose Toxicity Level:",
+                "Choose Top Harm %:",
                 min=0,
                 max=100,
-                value=50,  # Default starting value
+                value=10,  # Default starting value
                 step=1   # Slider increments by 0.01 for finer control
             )
         with ui.layout_columns(height="400px"):
             with ui.card():
-                ui.card_header("Top 20 Toxic Users")
+                ui.card_header("Top 20 Harmful Users")
 
                 # @render.ui
                 # def subreddit_frequency():
@@ -690,7 +694,7 @@ with ui.nav_panel("User Analysis By Subreddit"):
             #         return "The Uruks turn north-east. They're taking the hobbits to Isengard!"
             
             with ui.card():
-                ui.card_header("Cumulative Plot Of Hate")
+                ui.card_header("Cumulative Plot Of Harmfulness")
 
                 @render_plotly
                 def cumulative_hate_plot():
@@ -736,15 +740,15 @@ with ui.nav_panel("User Analysis By Subreddit"):
                             mode='lines+markers',
                             line=dict(width=2),
                             marker=dict(size=6),
-                            name="Cumulative Hate Percentage"
+                            name="Cumulative Harmful Percentage"
                         )
                     )
 
                     # Update layout for readability
                     fig.update_layout(
-                        title="Cumulative Hate Percentage by Username Count",
+                        title="Cumulative Harmful Percentage by Username Count",
                         xaxis_title="Cumulative Username Count",
-                        yaxis_title="Cumulative Hate Percentage (%)",
+                        yaxis_title="Cumulative Harm Percentage (%)",
                         yaxis=dict(range=[0, 100]),  # Set y-axis range to 100% for clarity
                         template="plotly_white",
                         font=dict(size=12)
@@ -753,28 +757,58 @@ with ui.nav_panel("User Analysis By Subreddit"):
                     return fig
 
                 @render.ui
-                def usernames_for_hate_percentage_card():
+                def display_top_percent_hate_usernames():
                     # Retrieve inputs
-                    threshold = input.toxicityLevel()
-                    subreddit_name = input.subredditSelect_2()
+                    threshold = input.toxicityLevel()  # Use toxicity level as the threshold for cumulative hate percentage
+                    selected_subreddit = input.subredditSelect_2()  # Selected subreddit
+                    
+                    # Retrieve the filtered data for hate comments using filtered_by_post_data_2 function
                     subreddit_data = filtered_by_post_data_2()
-                  
-                    # Step 2: Calculate cumulative hate percentage and cumulative username count
-                    subreddit_data['cumulative_hate_percentage'] = subreddit_data['hate_percentage'].cumsum()
-                    subreddit_data['cumulative_user_count'] = range(1, len(subreddit_data) + 1)
 
-                    # Step 3: Find the minimum cumulative user count needed to meet or exceed the threshold
-                    result = subreddit_data[subreddit_data['cumulative_hate_percentage'] >= threshold].head(1)
+                    # Filter for the selected subreddit if "All" is not selected
+                    if selected_subreddit != "All":
+                        subreddit_data = subreddit_data[subreddit_data['subreddit'] == selected_subreddit]
 
-                    # Step 4: Prepare the output message
-                    if not result.empty:
-                        user_count = result['cumulative_user_count'].values[0]
-                        message = f"{user_count} usernames are needed to reach or exceed {threshold}% hate in {subreddit_name}."
+                    # Sort the data by subreddit and hate_percentage in descending order
+                    df_sorted = subreddit_data.sort_values(by=['subreddit', 'hate_percentage'], ascending=[True, False])
+
+                    # Define a function to get the count of usernames contributing to top 10% hate_percentage
+                    def count_top_users_by_hate_threshold(group, threshold):
+                        # Calculate cumulative sum of hate_percentage
+                        group = group.copy()  # Avoid modifying the original DataFrame
+                        group['cumulative_hate_percentage'] = group['hate_percentage'].cumsum()
+
+                        # Calculate the target cumulative hate percentage
+                        target_percentage = group['hate_percentage'].sum() * (threshold / 100)
+
+                        # Count usernames until the cumulative hate percentage reaches or exceeds the target
+                        count = group[group['cumulative_hate_percentage'] <= target_percentage].shape[0]
+
+                        # Add one more user if necessary to reach or slightly exceed the threshold
+                        if count < group.shape[0] and group['cumulative_hate_percentage'].iloc[count] < target_percentage:
+                            count += 1
+
+                        return count
+
+                    # If "All" is selected, apply the function on the entire dataset
+                    if selected_subreddit == "All":
+                        total_usernames_count = count_top_users_by_hate_threshold(df_sorted, threshold)
+                        result_text = f"<h4>Total Harm Contribution Analysis</h4><p>{total_usernames_count} usernames contribute to the top {threshold}% harmful comments across all subreddits.</p>"
                     else:
-                        message = f"The cumulative hate percentage does not reach {threshold}% in {subreddit_name}."
+                        # Apply the function to the selected subreddit group
+                        top_usernames_by_hate_threshold = df_sorted.groupby('subreddit').apply(
+                            lambda group: count_top_users_by_hate_threshold(group, threshold)
+                        ).reset_index(name='username_count')
 
-                    # Display the result in the UI
-                    return ui.HTML(f"<p>{message}</p>")
+                        # Show results for the selected subreddit only
+                        username_count = top_usernames_by_hate_threshold.loc[
+                            top_usernames_by_hate_threshold['subreddit'] == selected_subreddit, 'username_count'
+                        ].values[0]
+                        result_text = f"<h4>{selected_subreddit} Harm Contribution Analysis</h4><p>{username_count} usernames contribute to the top {threshold}% harmful comments in {selected_subreddit}.</p>"
+
+                    # Display the result as HTML text in the UI
+                    return ui.HTML(result_text)
+
 
                     
         with ui.layout_column_wrap(height="400px"):
@@ -785,7 +819,12 @@ with ui.nav_panel("User Analysis By Subreddit"):
                 def plot_user_comment_time_series_interactive():
                     # Retrieve the username from the input
                     username = input.usernameInput()
+                    selected_subreddit = input.subredditSelect_2()  # Selected subreddit
                     Data = unfiltered_data()  # Assuming this function returns the filtered data
+
+                    if selected_subreddit != "All":
+                        # Filter data for the specified username
+                        Data = Data[Data['subreddit'] == selected_subreddit]
 
                     # Check if username is provided
                     if not username:
@@ -837,16 +876,16 @@ with ui.nav_panel("User Analysis By Subreddit"):
                         x=monthly_hate_counts.index,
                         y=monthly_hate_counts.values,
                         mode='lines+markers',
-                        name='Hate Comments',
+                        name='Harmful Comments',
                         line=dict(color='red'),
                         marker=dict(size=6)
                     ))
 
                     # Update layout for better readability
                     fig.update_layout(
-                        title=f"Monthly Hate Comment Activity for {username}",
+                        title=f"Monthly Harmful Comment Activity for {username}",
                         xaxis_title="Month",
-                        yaxis_title="Number of Hate Comments",
+                        yaxis_title="Number of Harmful Comments",
                         hovermode="x unified",  # Shows all hover data for a specific x-axis value
                         template="plotly_white",
                         showlegend=True
@@ -880,9 +919,9 @@ with ui.nav_panel("Trigger Analysis"):
                     if not entered_text:
                         return None
 
-                    # Use LIME's prediction function to get probabilities
-                    probs = lime_predict([entered_text], model, tokenizer)
-                    
+                    # Use the lime_predict function with best_model and vectorizer
+                    probs = lime_predict([entered_text])
+
                     # Get probabilities for "Non-trigger" and "Trigger" classes
                     non_trigger_prob = probs[0][0]  # Assumes 0th index is "Non-trigger"
                     trigger_prob = probs[0][1]      # Assumes 1st index is "Trigger"
@@ -891,42 +930,30 @@ with ui.nav_panel("Trigger Analysis"):
                 
                 @reactive.Calc
                 def integrated_gradients_probabilities():
-                    # Get input text from the app input
-                    input_text = input.input_text()
+                    entered_text = input.input_text()
                     
-                    # Tokenize the input text
-                    inputs = tokenizer(input_text, return_tensors="pt", padding=True, truncation=True, max_length=128).to(device)
-                    input_ids = inputs["input_ids"]
-                    attention_mask = inputs["attention_mask"]
-                    
-                    # Generate embeddings from input_ids using BERT’s embedding layer
-                    embeddings = model.bert.embeddings(input_ids).detach().requires_grad_(True)
-                    
-                    # Define a forward function for Integrated Gradients
-                    def forward_func(embeddings, attention_mask):
-                        outputs = model(inputs_embeds=embeddings, attention_mask=attention_mask)
-                        logits = outputs.logits
-                        return torch.softmax(logits, dim=-1)
-                    
-                    # Initialize Integrated Gradients
-                    integrated_gradients = IntegratedGradients(forward_func)
-                    
-                    # Compute attributions with Integrated Gradients
-                    attributions = integrated_gradients.attribute(
-                        embeddings,
-                        baselines=torch.zeros_like(embeddings).to(device),  # Baseline as zero tensor
-                        additional_forward_args=(attention_mask,),
-                        target=1,  # Assuming class index 1 corresponds to "Trigger"
-                        n_steps=50
-                    )
-                    
-                    # Compute probabilities for each class
-                    outputs = model(inputs_embeds=embeddings, attention_mask=attention_mask)
-                    probabilities = torch.softmax(outputs.logits, dim=-1).squeeze().tolist()  # Convert to a list for readability
+                    # Check if there is text to analyze
+                    if not entered_text:
+                        return None
 
-                    return {"Non-trigger": probabilities[0], "Trigger": probabilities[1]}
+                    # Vectorize the input text using TF-IDF vectorizer
+                    input_tfidf = vectorizer.transform([entered_text]).toarray()
+                    input_tensor = torch.tensor(input_tfidf, dtype=torch.float32).to(next(best_model.parameters()).device)
+                    
+                    # Ensure the model is in evaluation mode
+                    best_model.eval()
+                    
+                    # Compute the prediction probabilities
+                    with torch.no_grad():
+                        outputs = best_model(input_tensor)
+                        probabilities = torch.sigmoid(outputs).squeeze().cpu().numpy()
+                    
+                    # Return probabilities as a dictionary
+                    return {
+                        "Non-trigger": 1 - probabilities,  # Assumes non-trigger is the complement of trigger probability
+                        "Trigger": probabilities
+                    }
 
-                # Render the prediction probabilities as a Plotly bar chart
                 @render_plotly
                 def display_prediction_probabilities():
                     xai = input.card_selection()
@@ -936,7 +963,7 @@ with ui.nav_panel("Trigger Analysis"):
                         if probs is None:
                             return go.Figure()  # Return an empty figure if no text is entered
 
-                        # Create the Plotly bar plot with updated colors for Integrated Gradients style
+                        # Create the Plotly bar plot with updated colors
                         fig = go.Figure(
                             data=[
                                 go.Bar(
@@ -967,29 +994,29 @@ with ui.nav_panel("Trigger Analysis"):
                         return fig
                     else:
                         probs = integrated_gradients_probabilities()
-                        input_text = input.input_text()
-                        if not input_text or input_text.strip() == "":
-                            return go.Figure()
 
-                        # Create the Plotly bar plot for Integrated Gradients
+                        if probs is None:
+                            return go.Figure()  # Return an empty figure if no text is entered
+
+                        # Create the Plotly bar plot
                         fig = go.Figure(
                             data=[
                                 go.Bar(
                                     x=[probs["Non-trigger"], probs["Trigger"]],
                                     y=["Non-trigger", "Trigger"],
                                     orientation='h',
-                                    marker_color=["#98FB98", "#FF6347"],  # Different colors for Integrated Gradients
+                                    marker_color=["#98FB98", "#FF6347"],  # Green for Non-trigger, Red for Trigger
                                     text=[f"{probs['Non-trigger']:.2f}", f"{probs['Trigger']:.2f}"],  # Display values
-                                    textposition="auto",
+                                    textposition="auto",  # Automatically place text inside or outside the bar
                                     textfont=dict(size=16, color="black", family="Arial, bold"),
-                                    hovertemplate='%{text}<extra></extra>'
+                                    hovertemplate='%{text}<extra></extra>'  # Show text on hover
                                 )
                             ]
                         )
 
                         # Update layout for readability
                         fig.update_layout(
-                            title="Prediction Probabilities (Integrated Gradients)",
+                            title="Prediction Probabilities via Integrated Gradients",
                             xaxis_title="Probability",
                             yaxis=dict(
                                 autorange="reversed",
@@ -1000,115 +1027,143 @@ with ui.nav_panel("Trigger Analysis"):
                         )
 
                         return fig
-                    
 
-            with ui.card():
+            with ui.card():  ##### NUMBER 2222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222222
                 ui.card_header("Predicted Topic With Explanation")
 
-                # Function to get LIME explanation as a list of words and their contribution scores
-                @reactive.Calc
-                def lime_explanation():
-                    entered_text = input.input_text()
+                ig = IntegratedGradients(best_model)
 
-                    # Check if there is text to analyze
+                @reactive.Calc
+                def integrated_gradients_word_attributions():
+                    entered_text = input.input_text()
+                    
                     if not entered_text:
                         return None
 
-                    # Generate explanation with LIME, passing model and tokenizer using a lambda
-                    exp = explainer.explain_instance(
-                        entered_text,
-                        lambda text: lime_predict(text, model, tokenizer),
-                        num_features=10  # Number of words to highlight
-                    )
+                    # Vectorize the input text using TF-IDF vectorizer
+                    input_tfidf = vectorizer.transform([entered_text]).toarray()
+                    input_tensor = torch.tensor(input_tfidf, dtype=torch.float32).to(next(best_model.parameters()).device)
+                    
+                    # Compute attributions using Integrated Gradients
+                    attributions, _ = ig.attribute(input_tensor, target=0, return_convergence_delta=True)
+                    attributions_np = attributions.cpu().detach().numpy()[0]
 
-                    # Extract the explanation as a list of words and scores
-                    explanation_list = exp.as_list()  # List of words with their contribution scores
-                    return explanation_list
+                    # Get the words corresponding to the features from the TF-IDF vectorizer
+                    words = vectorizer.get_feature_names_out()
+
+                    # Zip words with their corresponding attribution values
+                    word_attributions = list(zip(words, attributions_np))
+
+                    # Filter out words with zero attributions
+                    non_zero_word_attributions = [(word, attr) for word, attr in word_attributions if abs(attr) > 0]
+
+                    # Sort by absolute value of attribution and take the top 10
+                    sorted_word_attributions = sorted(non_zero_word_attributions, key=lambda x: abs(x[1]), reverse=True)[:10]
+
+                    # Return the top words and their scores as a list of tuples
+                    return sorted_word_attributions
 
                 # Render the LIME explanation as a Plotly bar plot
                 @render_plotly
                 def display_explanation():
                     xai = input.card_selection()
                     if xai == "Lime":
-                        explanation_list = lime_explanation()
-
-                        if explanation_list is None:
+                        entered_text = input.input_text()
+    
+                        if not entered_text:
                             return go.Figure()  # Return an empty figure if no text is entered
 
-                        # Unpack words and scores
-                        words, scores = zip(*explanation_list)  # Separate words and their scores
+                        # Get the word contributions from LIME
+                        word_contributions = get_lime_word_contributions(entered_text)
 
-                        # Define colors based on score direction (positive or negative)
-                        colors = ["#FF6347" if score > 0 else "#98FB98" for score in scores]  # Red for positive, light green for negative
+                        # Separate words and scores
+                        words = [item[0] for item in word_contributions]
+                        scores = [item[1] for item in word_contributions]
 
-                        # Create the Plotly bar plot with the new color scheme
+                        # Create a Plotly bar plot for LIME word contributions
                         fig = go.Figure(
                             data=[
                                 go.Bar(
-                                    x=scores,
-                                    y=words,
+                                    x=scores,  # Contribution scores as x-axis values
+                                    y=words,  # Words as y-axis labels
                                     orientation='h',
-                                    marker_color=colors,
-                                    text=[f"<b>{word}</b>: {score:.2f}" for word, score in zip(words, scores)],  # Bold words and show score
-                                    textposition="auto",  # Automatically place text on top of each bar
-                                    textfont=dict(size=16, color="black", family="Arial, bold"),  # Increase font size, set color, and bold
-                                    hovertemplate='%{text}<extra></extra>'  # Show text on hover
+                                    marker=dict(
+                                        color=["#FF6347" if score > 0 else "#98FB98" for score in scores],  # Red for positive, green for negative
+                                        line=dict(color="rgba(255,255,255,0.8)", width=1)  # White border for readability
+                                    ),
+                                    text=[f"{score:.2f}" for score in scores],  # Display contribution scores
+                                    textposition="auto",
+                                    textfont=dict(size=16, color="black", family="Arial, bold"),
+                                    hovertemplate='%{text}<extra></extra>'
                                 )
                             ]
                         )
-
-                        # Update layout for readability
+                        
+                        # Update layout for better readability
                         fig.update_layout(
-                            title="LIME Explanation for Input Text",
+                            title="Word Contributions via LIME",
                             xaxis_title="Contribution Score",
-                            yaxis_title="",
-                            yaxis=dict(autorange="reversed", showticklabels=False),  # Remove y-axis labels
+                            yaxis=dict(
+                                autorange="reversed",
+                                tickfont=dict(size=18, family="Arial, bold")
+                            ),
                             height=400,
-                            margin=dict(l=60, r=20, t=60, b=20),
+                            margin=dict(l=80, r=20, t=30, b=20),
                         )
-
+                        
                         return fig
                     
                     else:
-                        text = input.input_text()  # Retrieve text from input
 
-                        if text:
-                            tokens, scores = compute_attributions(text)
-                            
-                            # Prepare data and sort by absolute attribution values
-                            df = pd.DataFrame({"Token": tokens, "Attribution Score": scores})
-                            df = df.reindex(df["Attribution Score"].abs().sort_values(ascending=False).index).head(10)
-                            df["Token + Score"] = df["Token"] + " (" + df["Attribution Score"].round(2).astype(str) + ")"
-                            df = df[::-1]  # Reverse for descending y-axis order
+                        word_attributions = integrated_gradients_word_attributions()
 
-                            # Set colors based on score intensity and sign
-                            colors = [f'rgba(255, 0, 0, {abs(score) / max(df["Attribution Score"].abs())})' if score > 0 else 
-                                    f'rgba(0, 128, 0, {abs(score) / max(df["Attribution Score"].abs())})' for score in df["Attribution Score"]]
+                        if word_attributions is None:
+                            return go.Figure()  # Return an empty figure if no text is entered
 
-                            # Create the bar chart
-                            fig = go.Figure(go.Bar(
-                                x=df["Attribution Score"],
-                                y=df["Token + Score"],
-                                orientation='h',
-                                marker=dict(color=colors),
-                                text=["<b>" + label + "</b>" for label in df["Token + Score"]],
-                                textposition="auto",
-                                texttemplate='%{text}'
-                            ))
+                        # Separate words and scores
+                        words = [item[0] for item in word_attributions]
+                        scores = [item[1] for item in word_attributions]
 
-                            # Customize layout
-                            fig.update_layout(
-                                title="Top 10 Token Attributions",
-                                xaxis_title="Attribution Score",
-                                yaxis_title="",
-                                yaxis=dict(categoryorder="array"),
-                                font=dict(family="Arial", size=12, color="black")
-                            )
-                            
-                            return fig
+                        # Set colors with varying intensity based on the attribution score
+                        max_abs_score = max(abs(score) for score in scores)
+                        colors = [
+                            f'rgba(255, 0, 0, {min(1, abs(score) / max_abs_score)})' if score > 0 else 
+                            f'rgba(0, 128, 0, {min(1, abs(score) / max_abs_score)})' 
+                            for score in scores
+                        ]
 
-                        # Return an empty figure if no text is entered
-                        return go.Figure()
+                        # Create the Plotly bar plot for IG word attributions
+                        fig = go.Figure(
+                            data=[
+                                go.Bar(
+                                    x=scores,  # Contribution scores as x-axis values
+                                    y=words,  # Words as y-axis labels
+                                    orientation='h',
+                                    marker=dict(
+                                        color=colors,
+                                        line=dict(color="rgba(255,255,255,0.8)", width=1)  # White border for readability
+                                    ),
+                                    text=[f"{score:.2f}" for score in scores],  # Display contribution scores
+                                    textposition="auto",
+                                    textfont=dict(size=16, color="black", family="Arial, bold"),
+                                    hovertemplate='%{text}<extra></extra>'
+                                )
+                            ]
+                        )
+                        
+                        # Update layout for better readability
+                        fig.update_layout(
+                            title="Top Word Contributions via Integrated Gradients",
+                            xaxis_title="Contribution Score",
+                            yaxis=dict(
+                                autorange="reversed",
+                                tickfont=dict(size=18, family="Arial, bold")
+                            ),
+                            height=400,
+                            margin=dict(l=80, r=20, t=30, b=20),
+                        )
+                        
+                        return fig
 
                 
 
@@ -1117,25 +1172,34 @@ with ui.nav_panel("Trigger Analysis"):
                 ui.card_header("Text Attribution Explanation")
 
                 @render.ui
-                def display_lime_html_text():
-                    xai = input.card_selection() 
-                    text = input.input_text()
-
-                    if text is None or not text:
-                            return ui.HTML("<p>Enter text to see the explanation.</p>")
-                    
+                def display_lime_highlighted_text_ui():
+                    ig = IntegratedGradients(best_model)
+                    xai = input.card_selection()
                     if xai == "Lime":
-                        # Generate HTML text with token colors and styles based on LIME
-                        html_content = generate_lime_html(text)
+                        entered_text = input.input_text()
                         
-                        # Display the HTML content within the Shiny Express UI
-                        return ui.HTML(html_content)
+                        if not entered_text:
+                            return HTML("<p>Please enter text for analysis.</p>")
+
+                        # Generate highlighted HTML based on LIME attributions
+                        highlighted_html = get_lime_highlighted_html(entered_text)
+
+                        # Wrap the HTML in HTML() to ensure it renders as HTML
+                        return HTML(f"<div>{highlighted_html}</div>")
                     else:
-                        # Generate HTML with token colors based on Integrated Gradients
-                        html_content = generate_integrated_gradients_html(text)
-                        
-                    # Display the HTML content within the Shiny Express UI
-                    return ui.HTML(html_content)
+                        entered_text = input.input_text()
+    
+                        if not entered_text:
+                            return HTML("<p>Please enter text for analysis.</p>")
+
+                        # Generate highlighted HTML based on IG attributions
+                        highlighted_html = get_ig_highlighted_html(entered_text)
+
+                        # Wrap the HTML in HTML() to ensure it renders correctly in the UI
+                        return HTML(f"<div>{highlighted_html}</div>")
+
+
+
 
 # # --------------------------------------------------------
 # # Reactive calculations and effects
@@ -1225,15 +1289,21 @@ def filtered_by_post_data():
     
 def filtered_by_post_data_2():
     # Group by subreddit and username, counting the number of hate comments
-    data = df.copy()
-
+    Data = post.copy()
+    Data = Data.drop(columns=['Unnamed: 0'])
+    # Filter for hate comments and remove specific usernames
+    hate_comments = Data[(Data['BERT_2_hate'] == True) & 
+                         (Data['username'] != '[deleted]') & 
+                         (Data['username'] != 'sneakpeek_bot') & 
+                         (Data['username'] != 'AutoModerator')]
+    
     selected_subreddit = input.subredditSelect_2()
 
     if selected_subreddit != "All":
-            data = data[data['subreddit'] == selected_subreddit]
-            print(f"Filtered data shape by subreddit: {data.shape}")  # Debugging output
+        hate_comments = hate_comments[hate_comments['subreddit'] == selected_subreddit]
 
-    hate_counts = data.groupby(['subreddit', 'username']).size().reset_index(name='hate_comment_count')
+    # Group by subreddit and username, counting the number of hate comments
+    hate_counts = hate_comments.groupby(['subreddit', 'username']).size().reset_index(name='hate_comment_count')
 
     # Calculate total hate comments per subreddit
     total_hate_per_subreddit = hate_counts.groupby('subreddit')['hate_comment_count'].sum().reset_index(name='total_hate_comments')
@@ -1244,16 +1314,11 @@ def filtered_by_post_data_2():
     # Calculate percentage of hate comments
     hate_counts['hate_percentage'] = (hate_counts['hate_comment_count'] / hate_counts['total_hate_comments']) * 100
 
-    # Get the top 100 usernames for each subreddit
+    # Sort by subreddit and hate percentage in descending order
     top_hate_users = hate_counts.sort_values(['subreddit', 'hate_comment_count'], ascending=[True, False])
 
-    #remove deleted users
-    top_hate_users = top_hate_users[top_hate_users['username'] != '[deleted]']
-    top_hate_users = top_hate_users[top_hate_users['username'] != 'sneakpeek_bot']
-    top_hate_users = top_hate_users[top_hate_users['username'] != 'AutoModerator']
-
-    # Display the result
-    return top_hate_users
+    # Return the result
+    return top_hate_users   
 
 def unfiltered_data():
     return df
