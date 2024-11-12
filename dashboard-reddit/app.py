@@ -445,7 +445,7 @@ with ui.nav_panel("Subreddit Post Analysis"):
 
         with ui.layout_column_wrap(height="300px"):
             with ui.card():
-                ui.card_header("Wordcloud Of Posts With The Most Hate")
+                ui.card_header("Wordcloud Of Posts With The Most Harmful Content")
 
                 # @render.ui
                 # def wordcloud_img():
@@ -644,7 +644,7 @@ with ui.nav_panel("User Analysis By Subreddit"):
             # Add a slider for selecting toxicity level between 0 and 1
             ui.input_slider(
                 "toxicityLevel",
-                "Choose Toxicity Level:",
+                "Choose Top Harm %:",
                 min=0,
                 max=100,
                 value=10,  # Default starting value
@@ -652,7 +652,7 @@ with ui.nav_panel("User Analysis By Subreddit"):
             )
         with ui.layout_columns(height="400px"):
             with ui.card():
-                ui.card_header("Top 20 Toxic Users")
+                ui.card_header("Top 20 Harmful Users")
 
                 # @render.ui
                 # def subreddit_frequency():
@@ -694,7 +694,7 @@ with ui.nav_panel("User Analysis By Subreddit"):
             #         return "The Uruks turn north-east. They're taking the hobbits to Isengard!"
             
             with ui.card():
-                ui.card_header("Cumulative Plot Of Hate")
+                ui.card_header("Cumulative Plot Of Harmfulness")
 
                 @render_plotly
                 def cumulative_hate_plot():
@@ -740,15 +740,15 @@ with ui.nav_panel("User Analysis By Subreddit"):
                             mode='lines+markers',
                             line=dict(width=2),
                             marker=dict(size=6),
-                            name="Cumulative Hate Percentage"
+                            name="Cumulative Harmful Percentage"
                         )
                     )
 
                     # Update layout for readability
                     fig.update_layout(
-                        title="Cumulative Hate Percentage by Username Count",
+                        title="Cumulative Harmful Percentage by Username Count",
                         xaxis_title="Cumulative Username Count",
-                        yaxis_title="Cumulative Hate Percentage (%)",
+                        yaxis_title="Cumulative Harm Percentage (%)",
                         yaxis=dict(range=[0, 100]),  # Set y-axis range to 100% for clarity
                         template="plotly_white",
                         font=dict(size=12)
@@ -793,7 +793,7 @@ with ui.nav_panel("User Analysis By Subreddit"):
                     # If "All" is selected, apply the function on the entire dataset
                     if selected_subreddit == "All":
                         total_usernames_count = count_top_users_by_hate_threshold(df_sorted, threshold)
-                        result_text = f"<h4>Total Hate Contribution Analysis</h4><p>{total_usernames_count} usernames contribute to the top {threshold}% hate comments across all subreddits.</p>"
+                        result_text = f"<h4>Total Harm Contribution Analysis</h4><p>{total_usernames_count} usernames contribute to the top {threshold}% harmful comments across all subreddits.</p>"
                     else:
                         # Apply the function to the selected subreddit group
                         top_usernames_by_hate_threshold = df_sorted.groupby('subreddit').apply(
@@ -804,7 +804,7 @@ with ui.nav_panel("User Analysis By Subreddit"):
                         username_count = top_usernames_by_hate_threshold.loc[
                             top_usernames_by_hate_threshold['subreddit'] == selected_subreddit, 'username_count'
                         ].values[0]
-                        result_text = f"<h4>{selected_subreddit} Hate Contribution Analysis</h4><p>{username_count} usernames contribute to the top {threshold}% hate comments in {selected_subreddit}.</p>"
+                        result_text = f"<h4>{selected_subreddit} Harm Contribution Analysis</h4><p>{username_count} usernames contribute to the top {threshold}% harmful comments in {selected_subreddit}.</p>"
 
                     # Display the result as HTML text in the UI
                     return ui.HTML(result_text)
@@ -819,7 +819,12 @@ with ui.nav_panel("User Analysis By Subreddit"):
                 def plot_user_comment_time_series_interactive():
                     # Retrieve the username from the input
                     username = input.usernameInput()
+                    selected_subreddit = input.subredditSelect_2()  # Selected subreddit
                     Data = unfiltered_data()  # Assuming this function returns the filtered data
+
+                    if selected_subreddit != "All":
+                        # Filter data for the specified username
+                        Data = Data[Data['subreddit'] == selected_subreddit]
 
                     # Check if username is provided
                     if not username:
@@ -871,16 +876,16 @@ with ui.nav_panel("User Analysis By Subreddit"):
                         x=monthly_hate_counts.index,
                         y=monthly_hate_counts.values,
                         mode='lines+markers',
-                        name='Hate Comments',
+                        name='Harmful Comments',
                         line=dict(color='red'),
                         marker=dict(size=6)
                     ))
 
                     # Update layout for better readability
                     fig.update_layout(
-                        title=f"Monthly Hate Comment Activity for {username}",
+                        title=f"Monthly Harmful Comment Activity for {username}",
                         xaxis_title="Month",
-                        yaxis_title="Number of Hate Comments",
+                        yaxis_title="Number of Harmful Comments",
                         hovermode="x unified",  # Shows all hover data for a specific x-axis value
                         template="plotly_white",
                         showlegend=True
@@ -1291,6 +1296,11 @@ def filtered_by_post_data_2():
                          (Data['username'] != '[deleted]') & 
                          (Data['username'] != 'sneakpeek_bot') & 
                          (Data['username'] != 'AutoModerator')]
+    
+    selected_subreddit = input.subredditSelect_2()
+
+    if selected_subreddit != "All":
+        hate_comments = hate_comments[hate_comments['subreddit'] == selected_subreddit]
 
     # Group by subreddit and username, counting the number of hate comments
     hate_counts = hate_comments.groupby(['subreddit', 'username']).size().reset_index(name='hate_comment_count')
