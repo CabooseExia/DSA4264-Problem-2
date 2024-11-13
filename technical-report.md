@@ -255,8 +255,6 @@ Therefore, when we experimented on the three topic modelling techniques, LDA and
 
 BERTopic was chosen for its adaptability to short, informal comments and its ability to dynamically discover topics without requiring a predefined topic count. Its extensive tuning capabilities further support deep insights into diverse online discussions. While [OCTIS (Optimizing and Comparing Topic models Is Simple)](https://github.com/MIND-Lab/OCTIS) provides a robust framework for training, analyzing, and comparing topic models using Bayesian Optimization, BERTopic remained the preferred choice. This is because there is no single correct way to evaluate a topic model across all use cases, allowing users to select metrics suited to their specific goals rather than optimizing solely for general-purpose coherence metrics.
 
-Furthermore, BERTopic 
-
 ***Fine-Tuning BERTopic***
 
 To fine-tune BERTopic for optimal topic modeling results, we began by pre-calculating document embeddings for the ~230,000 hate comments using the SentenceTransformer `all-MiniLM-L6-v2` which is the default used by BERTopic. This step ensured that embeddings were readily available for multiple iterations of parameter tuning, significantly saving computation time. The table below shows the sets of hyperparameters used for tuning BERTopic.
@@ -607,13 +605,13 @@ We analyzed how varying thresholds for harmful child comments affected parent co
 ***Observations***
 | **Aspect**           | **Description**                                                                                                                                                                |
 |----------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Lower thresholds** | Captured a larger number of parent comments as triggers, encompassing a wide range of potential toxicity but risking higher false positives.                                   |
-| **Higher thresholds**| Reduced false positives by being more selective, though potentially missing less overt toxic interactions.                                                                    |
-| **Maximum Threshold**| Identified the maximum threshold that balanced sensitivity (capturing true triggers) and specificity (minimizing false positives), providing reliable classification of triggers aligned with project goals. |
+| **Lower thresholds** | Captured a larger number of parent comments as triggers, encompassing a wide range of potential hate and toxicity but risking higher false positives.                                   |
+| **Higher thresholds**| Reduced false positives by being more selective, though potentially missing less overly harmful interactions.                                                                    |
+| **Maximum Threshold**| A threshold of 5 was chosen to strike an optimal balance between sensitivity and specificity, effectively capturing true triggers while minimizing false positives. |
 
-This threshold and trigger analysis was crucial for setting a baseline threshold that would guide the following model training and evaluation phases, ensuring our classification of triggers was both inclusive and precise.
+This threshold and trigger analysis was crucial for setting a baseline threshold that would guide the following model training and evaluation phases.
 
-**Model Experiments**
+**Baseline Model Experiments**
 
 | Model              | Best Parameters                              | Performance (Precision, Recall, F1-Score, Accuracy, ROC-AUC)         | Technique & Top 5 Words Contributing to Trigger Class (Values)            |
 |--------------------|----------------------------------------------|----------------------------------------------------------------------|------------------------------------------------------|
@@ -622,7 +620,7 @@ This threshold and trigger analysis was crucial for setting a baseline threshold
 | **XGBoost**        | `learning_rate = 0.1`, `max_depth = 3`, `n_estimators = 100` | Precision: 0.55 <br> Recall: 0.54 <br> F1-Score: 0.53 <br> Accuracy: 0.54 <br> ROC-AUC: 0.5420 | **SHAP** <br> `guy`: 0.0016, <br> `girl`: 0.0009, <br> `remindme`: 0.0007, <br> `price`: 0.0006, <br> `thanks`: 0.0005 |
 | **Neural Network** | Final Epoch (10/10) | Precision: 0.59 <br> Recall: 0.60 <br> F1-Score: 0.59 <br> Accuracy: 0.60 | **Integrated Gradients** <br> `people`: 19.73, <br> `like`: 16.80, <br> `laugh`: 10.82, <br> `want`: 10.81, <br> `loud`: 9.29 |
 
-Based on initial testing, the Neural Network performed the best, achieving the highest scores in precision (0.59), recall (0.60), F1-score (0.59), and accuracy (0.60). Its use of Integrated Gradients provided detailed insights into influential words, making it the most effective model in this experiment for identifying toxicity triggers.
+Based on initial testing, the Neural Network performed the best, achieving the highest scores in precision (0.59), recall (0.60), F1-score (0.59), and accuracy (0.60). Its use of Integrated Gradients provided detailed insights into influential words, making it the most effective model in this experiment for identifying harmful triggers.
 
 **Applying Explainable AI (XAI)**
 
@@ -633,7 +631,7 @@ Based on initial testing, the Neural Network performed the best, achieving the h
 
 **Model Performance Across Varying Thresholds**
 
-We evaluated each model’s performance across thresholds (1 to 5) for toxic child comments to analyze precision, recall, and accuracy trade-offs in trigger classification. Metrics like Accuracy, Precision, Recall, F1-Score, and ROC-AUC provided insights into each model's sensitivity and specificity at different thresholds.
+We evaluated each model’s performance across thresholds (1 to 5) for harmful child comments to analyze precision, recall, and accuracy trade-offs in trigger classification. Metrics like Accuracy, Precision, Recall, F1-Score, and ROC-AUC provided insights into each model's sensitivity and specificity at different thresholds.
 
 | **Threshold** | **Model**           | **Precision** | **Recall** | **F1-Score** | **Accuracy** | **ROC-AUC** |
 |---------------|---------------------|---------------|------------|--------------|--------------|-------------|
